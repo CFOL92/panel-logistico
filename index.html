@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control Logístico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <!-- Chosen Palette: "Calm Neutral" (bg-slate-50, text-slate-800, accent-sky-600) -->
+    <!-- Application Structure Plan: Se diseñó una Single-Page Application (SPA) con una barra de navegación lateral fija. Esta estructura permite al usuario cambiar de contexto entre los módulos principales (Operación, Planificación, Dashboards, Administración) sin recargar la página, ofreciendo una experiencia fluida. El módulo de Operaciones (Kanban) es la vista por defecto por ser el centro de la actividad diaria. Las funciones secundarias como Checklists y Análisis de Causa se integran como modales dentro del flujo de trabajo principal para no saturar la navegación. Esta arquitectura fue elegida por su eficiencia y claridad, permitiendo al usuario enfocarse en una tarea a la vez mientras mantiene acceso rápido a todas las herramientas. -->
+    <!-- Visualization & Content Choices: 
+         - Módulo Operación: Se usa un tablero Kanban (HTML/Flexbox) para representar el flujo de trabajo (Asignado -> Entregado). Meta: Organizar. Interacción: Arrastrar tarjetas para actualizar estados. Justificación: Es el estándar visual para seguimiento de procesos.
+         - Módulo Planificación: Vista de dos paneles (HTML/Grid) con drag-and-drop (JS API). Meta: Comparar y Organizar. Interacción: Arrastrar pedidos a vehículos. Justificación: Es la forma más intuitiva de realizar asignaciones complejas.
+         - Módulo Dashboards: Se utilizan gráficos de Chart.js (Canvas). Meta: Informar y Comparar. Interacción: Filtros que actualizan los gráficos. Justificación: Chart.js es ligero, responsive y perfecto para visualizaciones de negocio claras. Se eligió un gráfico de barras para toneladas (comparación), un donut para el nivel de servicio (proporción) y un ranking de barras para la flota (comparación).
+         - Contenido textual: Se usan párrafos introductorios en cada sección para guiar al usuario, explicando el propósito de cada herramienta. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .main-content { transition: margin-left 0.3s ease; }
+        .sidebar { transition: width 0.3s ease; }
+        .kanban-card, .planning-card, .kanban-order-item { cursor: grab; }
+        .dragging { opacity: 0.5; border: 2px dashed #0284c7; }
+        .drag-over { background-color: #e0f2fe; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .planning-col.unavailable { background-color: #f1f5f9; border-style: solid; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="bg-white w-64 flex flex-col border-r border-slate-200 sidebar">
+            <div class="p-4 border-b border-slate-200">
+                <h1 class="text-2xl font-bold text-sky-600">LogiTrack</h1>
+                <p class="text-sm text-slate-500">Gestión de Entregas</p>
+            </div>
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#operacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 bg-sky-100 font-semibold">
+                    <i class="fas fa-tasks w-6 h-6 mr-3"></i><span>Operación</span>
+                </a>
+                <a href="#planificacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-calendar-alt w-6 h-6 mr-3"></i><span>Planificación</span>
+                </a>
+                <a href="#incidencias" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-exclamation-triangle w-6 h-6 mr-3"></i><span>Análisis de Incidencias</span>
+                </a>
+                <a href="#dashboards" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-chart-pie w-6 h-6 mr-3"></i><span>Dashboards</span>
+                </a>
+                 <a href="#informes" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-alt w-6 h-6 mr-3"></i><span>Informes</span>
+                </a>
+                 <a href="#liquidacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-invoice-dollar w-6 h-6 mr-3"></i><span>Liquidación</span>
+                </a>
+                <a href="#usuarios" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-users-cog w-6 h-6 mr-3"></i><span>Usuarios y Roles</span>
+                </a>
+                <a href="#flota" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-truck w-6 h-6 mr-3"></i><span>Flota de Vehículos</span>
+                </a>
+                 <a href="#importar" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-import w-6 h-6 mr-3"></i><span>Importar Datos</span>
+                </a>
+            </nav>
+            <div class="p-4 border-t border-slate-200">
+                <div class="flex items-center">
+                    <img src="https://placehold.co/40x40/E2E8F0/475569?text=AV" alt="Avatar" class="rounded-full">
+                    <div class="ml-3">
+                        <p class="font-semibold">Ana Valdez</p>
+                        <p class="text-sm text-slate-500">Planificador</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-1 p-4 md:p-8 overflow-y-auto">
+            
+            <!-- Módulo Operación (Kanban) -->
+            <div id="operacion" class="view">
+                <h2 class="text-3xl font-bold mb-1">Tablero de Operaciones</h2>
+                <p class="text-slate-600 mb-6">Monitorea el estado de todas las entregas en tiempo real. Arrastra las tarjetas para actualizar su estado.</p>
+                <!-- Filtros y Búsqueda -->
+                <div class="flex flex-wrap items-center gap-4 mb-6">
+                    <div>
+                        <label for="transportista-filter" class="font-semibold mr-2 text-sm text-slate-600">Transportadora:</label>
+                        <select id="transportista-filter" class="p-2 border border-slate-300 rounded-lg">
+                            <option value="todos">Todas</option>
+                            <option value="Flota Propia">Flota Propia</option>
+                            <option value="Transportista A">Transportista A</option>
+                            <option value="Transportista B">Transportista B</option>
+                        </select>
+                    </div>
+                    <div class="relative">
+                        <label for="general-search" class="sr-only">Buscar</label>
+                        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <i class="fas fa-search text-slate-400"></i>
+                        </div>
+                        <input type="text" id="general-search" placeholder="Buscar por móvil, factura, cliente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-64">
+                    </div>
+                </div>
+                <div id="kanban-board" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                    <!-- Columnas Kanban -->
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="asignado">
+                        <h3 class="font-bold mb-4 text-slate-700">Asignado</h3>
+                        <div class="space-y-4">
+                            <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Flota Propia">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 05</p>
+                                        <p class="text-sm text-slate-500">Flota Propia</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 2 Pedidos <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78901" data-order-cliente="Supermercado El Sol">
+                                        <p class="font-semibold text-sm">Factura #78901</p>
+                                        <p class="text-xs text-slate-500">Cliente: Supermercado El Sol</p>
+                                    </div>
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78903" data-order-cliente="Distribuidora Central">
+                                        <p class="font-semibold text-sm">Factura #78903</p>
+                                        <p class="text-xs text-slate-500">Cliente: Distribuidora Central</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right"></div>
+                            </div>
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 12</p>
+                                        <p class="text-sm text-slate-500">Transportista A</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                     <div class="kanban-order-item p-1" draggable="true" data-order-id="78902" data-order-cliente="Tienda La Esquina">
+                                        <p class="font-semibold text-sm">Factura #78902</p>
+                                        <p class="text-xs text-slate-500">Cliente: Tienda La Esquina</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="despacho">
+                        <h3 class="font-bold mb-4 text-slate-700">En Despacho</h3>
+                         <div class="space-y-4">
+                            <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Flota Propia">
+                                 <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 01</p>
+                                        <p class="text-sm text-slate-500">Flota Propia</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78904" data-order-cliente="Farmacia VidaSana">
+                                        <p class="font-semibold text-sm">Factura #78904</p>
+                                        <p class="text-xs text-slate-500">Cliente: Farmacia VidaSana</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                    <button class="text-xs text-sky-600 modal-trigger" data-modal="checklistModal">Ver Checklist</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="transito">
+                        <h3 class="font-bold mb-4 text-slate-700">En Tránsito</h3>
+                         <div class="space-y-4">
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Transportista B">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 08</p>
+                                        <p class="text-sm text-slate-500">Transportista B</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78905" data-order-cliente="Bodega Del Pueblo">
+                                        <p class="font-semibold text-sm">Factura #78905</p>
+                                        <p class="text-xs text-slate-500">Cliente: Bodega Del Pueblo</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                    <button class="complete-all-btn bg-green-100 text-green-700 text-xs font-semibold px-3 py-1 rounded-full hover:bg-green-200">Completar Viaje</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="entregado">
+                        <h3 class="font-bold mb-4 text-slate-700">Entregado</h3>
+                        <div class="space-y-4"></div>
+                    </div>
+                    <div class="kanban-col bg-red-100 rounded-lg p-4" data-col="incidencia">
+                        <h3 class="font-bold mb-4 text-red-700">Con Incidencia</h3>
+                        <div class="space-y-4">
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm border-l-4 border-red-500" draggable="true" data-transportista="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 15</p>
+                                        <p class="text-sm text-slate-500">Transportista A</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-red-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78906" data-order-cliente="Hipermercado Gigante">
+                                        <p class="font-semibold text-sm">Factura #78906</p>
+                                        <p class="text-xs text-slate-500">Cliente: Hipermercado Gigante</p>
+                                         <p class="mt-1 font-semibold text-red-600 text-xs">Cliente ausente</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                     <button class="text-xs text-sky-600 mt-2 modal-trigger" data-modal="whyModal" data-row-id="inc-row-1">Analizar Causa</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Módulo Planificación -->
+            <div id="planificacion" class="view hidden">
+                 <h2 class="text-3xl font-bold mb-1">Planificación de Despachos</h2>
+                <p class="text-slate-600 mb-6">Asigna pedidos a los vehículos disponibles. Arrastra un pedido del panel izquierdo y suéltalo sobre un móvil en el panel derecho.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 bg-slate-100 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-lg">Pedidos por Asignar</h3>
+                             <button id="add-order-btn" class="bg-sky-600 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-sky-700 flex items-center">
+                                <i class="fas fa-plus mr-2"></i>Añadir
+                            </button>
+                        </div>
+                        <div id="pedidos-pool" class="space-y-4">
+                            <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="250">
+                                <p class="font-semibold">Pedido #1011</p>
+                                <p class="text-sm text-slate-500">Cliente A | 250 kg</p>
+                            </div>
+                            <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="400">
+                                <p class="font-semibold">Pedido #1012</p>
+                                <p class="text-sm text-slate-500">Cliente B | 400 kg</p>
+                            </div>
+                             <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="800">
+                                <p class="font-semibold">Pedido #1013</p>
+                                <p class="text-sm text-slate-500">Cliente C | 800 kg</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 bg-slate-100 p-4 rounded-lg">
+                        <div class="flex flex-wrap items-center gap-4 mb-6">
+                            <h3 class="font-bold text-lg">Móviles Disponibles</h3>
+                            <div class="relative">
+                                <input type="text" id="vehicle-search" placeholder="Buscar móvil o patente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-auto">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <i class="fas fa-search text-slate-400"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <select id="vehicle-carrier-filter" class="p-2 border border-slate-300 rounded-lg">
+                                    <option value="todos">Todas las transportadoras</option>
+                                    <option value="Flota Propia">Flota Propia</option>
+                                    <option value="Transportista A">Transportista A</option>
+                                    <option value="Transportista B">Transportista B</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="vehicle-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="planning-col border border-dashed border-slate-300 p-4 rounded-lg" data-movil-id="movil-1" data-capacidad="1500" data-carrier="Flota Propia">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-semibold">Móvil 01 (JKL-456)</h4>
+                                        <p class="text-sm text-slate-500 carrier-name">Flota Propia</p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="status-dot h-3 w-3 bg-green-500 rounded-full" title="Disponible"></span>
+                                        <button class="change-status-btn text-slate-400 hover:text-sky-600" data-movil-id="movil-1"><i class="fas fa-cog"></i></button>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-slate-500 mt-2">Capacidad: <span class="capacidad-actual">0</span> / 1500 kg</p>
+                                <div class="mt-2 space-y-2 assigned-cards"></div>
+                            </div>
+                             <div class="planning-col border border-dashed border-slate-300 p-4 rounded-lg" data-movil-id="movil-2" data-capacidad="2000" data-carrier="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-semibold">Móvil 02 (XYZ-789)</h4>
+                                        <p class="text-sm text-slate-500 carrier-name">Transportista A</p>
+                                    </div>
+                                     <div class="flex items-center gap-2">
+                                        <span class="status-dot h-3 w-3 bg-green-500 rounded-full" title="Disponible"></span>
+                                        <button class="change-status-btn text-slate-400 hover:text-sky-600" data-movil-id="movil-2"><i class="fas fa-cog"></i></button>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-slate-500 mt-2">Capacidad: <span class="capacidad-actual">0</span> / 2000 kg</p>
+                                <div class="mt-2 space-y-2 assigned-cards"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Módulo Análisis de Incidencias -->
+            <div id="incidencias" class="view hidden">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Análisis de Incidencias</h2>
+                        <p class="text-slate-600">Gestiona y da seguimiento a las incidencias ocurridas para asegurar su resolución.</p>
+                    </div>
+                    <button id="add-incident-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                        <i class="fas fa-plus mr-2"></i>Añadir Incidencia
+                    </button>
+                </div>
+                <div class="flex flex-wrap items-center gap-4 mb-4">
+                    <div>
+                        <label for="incident-date-filter" class="font-semibold mr-2 text-sm text-slate-600">Fecha:</label>
+                        <input type="date" id="incident-date-filter" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                     <div>
+                        <label for="incident-status-filter" class="font-semibold mr-2 text-sm text-slate-600">Estado:</label>
+                        <select id="incident-status-filter" class="p-2 border border-slate-300 rounded-lg">
+                            <option value="todos">Todos</option>
+                            <option value="Abierto">Abierto</option>
+                            <option value="Resuelto">Resuelto</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <table class="w-full text-left">
+                        <thead class="border-b-2 border-slate-200">
+                            <tr>
+                                <th class="p-3">Factura/Móvil</th>
+                                <th class="p-3">Descripción</th>
+                                <th class="p-3">Tipo</th>
+                                <th class="p-3">Fecha</th>
+                                <th class="p-3">Estado</th>
+                                <th class="p-3">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incident-table-body">
+                            <tr id="inc-row-1" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">#78906</td>
+                                <td class="p-3">Cliente ausente</td>
+                                <td class="p-3">Reparto</td>
+                                <td class="p-3" data-date="2025-10-18">18/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="inc-row-1">Analizar</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-1"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                            <tr id="inc-row-2" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">#78852</td>
+                                <td class="p-3">Dirección incorrecta</td>
+                                <td class="p-3">Reparto</td>
+                                <td class="p-3" data-date="2025-10-17">17/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Resuelto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="reopen-btn text-sm bg-slate-500 text-white px-3 py-1 rounded-lg hover:bg-slate-600" data-row-id="inc-row-2">Reabrir</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-2"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                            <tr id="inc-row-3" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">Móvil 03</td>
+                                <td class="p-3">Desperfecto mecánico</td>
+                                <td class="p-3">Planificación</td>
+                                <td class="p-3" data-date="2025-10-17">17/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="inc-row-3">Analizar</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-3"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Módulo Dashboards -->
+            <div id="dashboards" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Dashboards de Rendimiento</h2>
+                <p class="text-slate-600 mb-6">Analiza los indicadores clave de tu operación. Utiliza los filtros para explorar los datos por período.</p>
+                <!-- Filtros -->
+                <div class="mb-6">
+                    <select id="date-filter" class="p-2 border border-slate-300 rounded-lg">
+                        <option value="7">Últimos 7 días</option>
+                        <option value="30">Últimos 30 días</option>
+                        <option value="90">Últimos 90 días</option>
+                    </select>
+                </div>
+                <!-- KPIs -->
+                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Entregas Totales</p><p class="text-3xl font-bold">1,204</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Toneladas Transportadas</p><p class="text-3xl font-bold">85.3 T</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Costo Flete Total</p><p class="text-3xl font-bold">$18,500</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Nivel de Servicio</p><p class="text-3xl font-bold text-green-600">98.2%</p></div>
+                </div>
+                <!-- Gráficos -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold mb-4">Toneladas por Día</h3>
+                        <div class="chart-container"><canvas id="toneladasChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold mb-4">Estado de Entregas</h3>
+                        <div class="chart-container"><canvas id="entregasChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                        <h3 class="font-bold mb-4">Viajes por Móvil</h3>
+                        <div class="chart-container" style="height: 400px; max-height: 500px;"><canvas id="flotaChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                        <h3 class="font-bold mb-4">Móviles Despachados por Canal y Transportista (Hoy)</h3>
+                        <div class="chart-container" style="height: 400px; max-height: 500px;"><canvas id="canalTransportistaChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+            
+             <!-- Módulo Informes -->
+            <div id="informes" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Generación de Informes</h2>
+                <p class="text-slate-600 mb-6">Selecciona el tipo de informe, define un rango de fechas y descarga los datos en formato CSV.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Informe de Incidencias -->
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-lg mb-4">Informe de Incidencias</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="inc-start-date" class="font-semibold text-sm">Fecha de Inicio</label>
+                                <input type="date" id="inc-start-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="inc-end-date" class="font-semibold text-sm">Fecha de Fin</label>
+                                <input type="date" id="inc-end-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                             <div>
+                                <label for="report-inc-status-filter" class="font-semibold text-sm">Estado</label>
+                                <select id="report-inc-status-filter" class="w-full p-2 border rounded-lg mt-1">
+                                    <option value="todos">Todos</option>
+                                    <option value="Abierto">Abierto</option>
+                                    <option value="Resuelto">Resuelto</option>
+                                </select>
+                            </div>
+                            <button id="download-incidents-csv" class="w-full bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">
+                                <i class="fas fa-download mr-2"></i>Descargar Informe
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Informe de Entregas -->
+                     <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-lg mb-4">Informe de Entregas</h3>
+                        <div class="space-y-4">
+                             <div>
+                                <label for="del-start-date" class="font-semibold text-sm">Fecha de Inicio</label>
+                                <input type="date" id="del-start-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="del-end-date" class="font-semibold text-sm">Fecha de Fin</label>
+                                <input type="date" id="del-end-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="report-carrier-filter" class="font-semibold text-sm">Transportadora</label>
+                                <select id="report-carrier-filter" class="w-full p-2 border rounded-lg mt-1">
+                                     <option value="todos">Todas</option>
+                                     <option value="Flota Propia">Flota Propia</option>
+                                     <option value="Transportista A">Transportista A</option>
+                                     <option value="Transportista B">Transportista B</option>
+                                </select>
+                            </div>
+                            <button id="download-deliveries-csv" class="w-full bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">
+                               <i class="fas fa-download mr-2"></i>Descargar Informe
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+             <!-- Módulo Liquidación -->
+            <div id="liquidacion" class="view hidden">
+                 <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Liquidación de Viajes</h2>
+                        <p class="text-slate-600">Verifica y completa los datos de los repartos finalizados.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-4 mb-4">
+                    <div>
+                        <label for="settlement-start-date" class="font-semibold mr-2 text-sm text-slate-600">Desde:</label>
+                        <input type="date" id="settlement-start-date" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label for="settlement-end-date" class="font-semibold mr-2 text-sm text-slate-600">Hasta:</label>
+                        <input type="date" id="settlement-end-date" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[800px]">
+                        <thead class="border-b">
+                            <tr>
+                                <th class="p-2">Factura</th>
+                                <th class="p-2">Móvil</th>
+                                <th class="p-2">Transportadora</th>
+                                <th class="p-2 text-center">Báscula</th>
+                                <th class="p-2 text-center">Portería</th>
+                                <th class="p-2 text-center">Costo Flete</th>
+                                <th class="p-2">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="settlement-table-body">
+                           <tr id="settlement-row-1" class="border-b">
+                                <td class="p-2 font-semibold">#78852</td>
+                                <td class="p-2">Móvil 10</td>
+                                <td class="p-2">Transportista A</td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2"><button class="edit-settlement-btn text-slate-500 hover:text-sky-600" data-row-id="settlement-row-1"><i class="fas fa-pencil"></i></button></td>
+                           </tr>
+                           <tr id="settlement-row-2" class="border-b">
+                                <td class="p-2 font-semibold">#78853</td>
+                                <td class="p-2">Móvil 02</td>
+                                <td class="p-2">Flota Propia</td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-exclamation-triangle text-red-500" title="Dato Faltante"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-exclamation-triangle text-red-500" title="Dato Faltante"></i></td>
+                                <td class="p-2"><button class="edit-settlement-btn text-slate-500 hover:text-sky-600" data-row-id="settlement-row-2"><i class="fas fa-pencil"></i></button></td>
+                           </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Usuarios y Roles -->
+            <div id="usuarios" class="view hidden">
+                 <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Gestión de Usuarios y Roles</h2>
+                        <p class="text-slate-600">Añade, edita o elimina usuarios del sistema.</p>
+                    </div>
+                    <button id="add-user-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                        <i class="fas fa-plus mr-2"></i>Añadir Usuario
+                    </button>
+                </div>
+                 <div class="mb-4">
+                    <div class="relative">
+                        <label for="user-search" class="sr-only">Buscar</label>
+                        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <i class="fas fa-search text-slate-400"></i>
+                        </div>
+                        <input type="text" id="user-search" placeholder="Buscar por nombre, correo, CI..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-72">
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[700px]">
+                        <thead class="border-b"><tr><th class="p-2">Nombre</th><th class="p-2">Correo Electrónico</th><th class="p-2">CI</th><th class="p-2">Empresa</th><th class="p-2">Rol</th><th class="p-2">Acciones</th></tr></thead>
+                        <tbody id="user-table-body">
+                            <tr id="user-row-1" class="border-b"><td class="p-2">Ana Valdez</td><td class="p-2">avaldez@logitrack.com</td><td class="p-2">1234567-8</td><td class="p-2">LogiTrack</td><td class="p-2">Planificador</td><td class="p-2 space-x-2"><button class="edit-user-btn text-slate-500 hover:text-sky-600" data-row-id="user-row-1"><i class="fas fa-pencil"></i></button><button class="delete-user-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="user-row-2" class="border-b"><td class="p-2">Carlos Ruiz</td><td class="p-2">cruiz@transportista-a.com</td><td class="p-2">8765432-1</td><td class="p-2">Transportista A</td><td class="p-2">Conductor</td><td class="p-2 space-x-2"><button class="edit-user-btn text-slate-500 hover:text-sky-600" data-row-id="user-row-2"><i class="fas fa-pencil"></i></button><button class="delete-user-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="user-row-3" class="border-b"><td class="p-2">Maria Solis</td><td class="p-2">msolis@logitrack.com</td><td class="p-2">1122334-5</td><td class="p-2">LogiTrack</td><td class="p-2">Administrador</td><td class="p-2 space-x-2"><button class="edit-user-btn text-slate-500 hover:text-sky-600" data-row-id="user-row-3"><i class="fas fa-pencil"></i></button><button class="delete-user-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="user-row-4"><td class="p-2">Juan Pérez</td><td class="p-2">jperez@transportista-b.com</td><td class="p-2">5566778-9</td><td class="p-2">Transportista B</td><td class="p-2">Conductor</td><td class="p-2 space-x-2"><button class="edit-user-btn text-slate-500 hover:text-sky-600" data-row-id="user-row-4"><i class="fas fa-pencil"></i></button><button class="delete-user-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Flota de Vehículos -->
+            <div id="flota" class="view hidden">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Gestión de Flota</h2>
+                        <p class="text-slate-600">Añade, edita o elimina vehículos de tu flota.</p>
+                    </div>
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                         <div class="relative">
+                            <label for="flota-search" class="sr-only">Buscar</label>
+                            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                <i class="fas fa-search text-slate-400"></i>
+                            </div>
+                            <input type="text" id="flota-search" placeholder="Buscar por móvil, patente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-auto">
+                        </div>
+                        <button id="add-vehicle-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                            <i class="fas fa-plus mr-2"></i>Añadir Vehículo
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[600px]">
+                        <thead class="border-b"><tr><th class="p-2">Móvil</th><th class="p-2">Patente</th><th class="p-2">Capacidad</th><th class="p-2">Transportadora</th><th class="p-2">Acciones</th></tr></thead>
+                        <tbody id="vehicle-table-body">
+                            <tr id="vehicle-row-1" class="border-b"><td class="p-2">Móvil 01</td><td class="p-2">JKL-456</td><td class="p-2">1500 kg</td><td class="p-2">Flota Propia</td><td class="p-2 space-x-2"><button class="edit-vehicle-btn text-slate-500 hover:text-sky-600" data-row-id="vehicle-row-1"><i class="fas fa-pencil"></i></button><button class="delete-vehicle-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="vehicle-row-2" class="border-b"><td class="p-2">Móvil 02</td><td class="p-2">XYZ-789</td><td class="p-2">2000 kg</td><td class="p-2">Flota Propia</td><td class="p-2 space-x-2"><button class="edit-vehicle-btn text-slate-500 hover:text-sky-600" data-row-id="vehicle-row-2"><i class="fas fa-pencil"></i></button><button class="delete-vehicle-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="vehicle-row-3" class="border-b"><td class="p-2">Móvil 03</td><td class="p-2">GHI-321</td><td class="p-2">3500 kg</td><td class="p-2">Transportista A</td><td class="p-2 space-x-2"><button class="edit-vehicle-btn text-slate-500 hover:text-sky-600" data-row-id="vehicle-row-3"><i class="fas fa-pencil"></i></button><button class="delete-vehicle-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                            <tr id="vehicle-row-4"><td class="p-2">Móvil 05</td><td class="p-2">ABC-123</td><td class="p-2">3500 kg</td><td class="p-2">Flota Propia</td><td class="p-2 space-x-2"><button class="edit-vehicle-btn text-slate-500 hover:text-sky-600" data-row-id="vehicle-row-4"><i class="fas fa-pencil"></i></button><button class="delete-vehicle-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Importar -->
+            <div id="importar" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Carga de Datos</h2>
+                <p class="text-slate-600 mb-6">Importa los datos de despachos desde un archivo Excel para iniciar la planificación.</p>
+                <div class="bg-white p-8 rounded-lg shadow-sm text-center max-w-2xl mx-auto">
+                    <i class="fas fa-file-excel text-5xl text-green-500 mb-4"></i>
+                    <h3 class="font-bold text-lg mb-2">Importación Masiva</h3>
+                    <p class="text-slate-500 mb-6">Descarga la plantilla, completa los datos y arrastra el archivo aquí para cargarlo.</p>
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-300 p-12 rounded-lg hover:border-sky-500 hover:bg-sky-50 transition-colors">
+                        <p class="text-slate-500">Arrastra y suelta tu archivo .xlsx aquí</p>
+                        <p class="text-sm text-slate-400 my-2">o</p>
+                        <button class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">Seleccionar Archivo</button>
+                    </div>
+                    <button class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold hover:bg-slate-300 mt-6">
+                        <i class="fas fa-download mr-2"></i>Descargar Plantilla
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="checklistModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+            <h3 class="font-bold text-lg mb-4">Checklist Pre-Despacho: Móvil 01</h3>
+            <ul>
+                <li class="flex justify-between items-center py-2 border-b"><p>Nivel de combustible</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2 border-b"><p>Estado de neumáticos</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2 border-b"><p>Luces funcionando</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2"><p>Documentación completa</p><span class="text-green-600 font-semibold">OK</span></li>
+            </ul>
+            <button class="modal-close mt-6 bg-slate-200 text-slate-700 px-4 py-2 rounded-lg w-full">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="whyModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Análisis de Causa Raíz: 5 Porqués</h3>
+            <p id="why-modal-problem" class="mb-4 bg-red-50 p-3 rounded-lg"></p>
+            <div class="space-y-3">
+                <div><label class="font-semibold">1. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">2. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">3. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">4. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">5. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-why-analysis" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Análisis y Resolver</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="reopenModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Reabrir Incidencia</h3>
+            <p class="mb-4">Estás a punto de reabrir una incidencia resuelta. Puedes añadir un comentario opcional para explicar el motivo.</p>
+            <div>
+                <label for="reopen-comment" class="font-semibold">Comentario (Opcional)</label>
+                <textarea id="reopen-comment" rows="3" class="w-full p-2 border rounded-lg mt-1"></textarea>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="confirm-reopen" class="bg-red-600 text-white px-4 py-2 rounded-lg">Confirmar Reapertura</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addIncidentModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nueva Incidencia</h3>
+            <form id="add-incident-form" class="space-y-4">
+                <div>
+                    <label for="incident-ref" class="font-semibold">Factura / Móvil (Opcional)</label>
+                    <input type="text" id="incident-ref" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="incident-type" class="font-semibold">Tipo de Incidencia</label>
+                    <select id="incident-type" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificación">Planificación</option>
+                        <option value="Reparto">Reparto</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="other-type-wrapper" class="hidden">
+                    <label for="other-type-description" class="font-semibold">Descripción del Motivo "Otro"</label>
+                    <input type="text" id="other-type-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="incident-desc" class="font-semibold">Descripción Detallada</label>
+                    <textarea id="incident-desc" rows="3" class="w-full p-2 border rounded-lg mt-1" required></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-incident" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Incidencia</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editIncidentModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Incidencia</h3>
+            <form id="edit-incident-form" class="space-y-4">
+                <div>
+                    <label for="edit-incident-ref" class="font-semibold">Factura / Móvil (Opcional)</label>
+                    <input type="text" id="edit-incident-ref" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="edit-incident-type" class="font-semibold">Tipo de Incidencia</label>
+                    <select id="edit-incident-type" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificación">Planificación</option>
+                        <option value="Reparto">Reparto</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="edit-other-type-wrapper" class="hidden">
+                    <label for="edit-other-type-description" class="font-semibold">Descripción del Motivo "Otro"</label>
+                    <input type="text" id="edit-other-type-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="edit-incident-desc" class="font-semibold">Descripción Detallada</label>
+                    <textarea id="edit-incident-desc" rows="3" class="w-full p-2 border rounded-lg mt-1" required></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-incident-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modals -->
+    <div id="addUserModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nuevo Usuario</h3>
+            <form id="add-user-form" class="space-y-4">
+                <div>
+                    <label for="user-name" class="font-semibold">Nombre</label>
+                    <input type="text" id="user-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-email" class="font-semibold">Correo Electrónico</label>
+                    <input type="email" id="user-email" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-ci" class="font-semibold">CI (Cédula de Identidad)</label>
+                    <input type="text" id="user-ci" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-company" class="font-semibold">Empresa</label>
+                    <input type="text" id="user-company" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="user-role" class="font-semibold">Rol</label>
+                    <select id="user-role" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificador">Planificador</option>
+                        <option value="Conductor">Conductor</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="other-role-wrapper" class="hidden">
+                    <label for="other-role-description" class="font-semibold">Especificar "Otro" Rol</label>
+                    <input type="text" id="other-role-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-user" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Usuario</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editUserModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Usuario</h3>
+            <form id="edit-user-form" class="space-y-4">
+                <div>
+                    <label for="edit-user-name" class="font-semibold">Nombre</label>
+                    <input type="text" id="edit-user-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-user-email" class="font-semibold">Correo Electrónico</label>
+                    <input type="email" id="edit-user-email" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-user-ci" class="font-semibold">CI (Cédula de Identidad)</label>
+                    <input type="text" id="edit-user-ci" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-user-company" class="font-semibold">Empresa</label>
+                    <input type="text" id="edit-user-company" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-user-role" class="font-semibold">Rol</label>
+                    <select id="edit-user-role" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificador">Planificador</option>
+                        <option value="Conductor">Conductor</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="edit-other-role-wrapper" class="hidden">
+                    <label for="edit-other-role-description" class="font-semibold">Especificar "Otro" Rol</label>
+                    <input type="text" id="edit-other-role-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-user-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addVehicleModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nuevo Vehículo</h3>
+            <form id="add-vehicle-form" class="space-y-4">
+                <div>
+                    <label for="vehicle-name" class="font-semibold">Nombre del Móvil (ej: Móvil 06)</label>
+                    <input type="text" id="vehicle-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-plate" class="font-semibold">Patente</label>
+                    <input type="text" id="vehicle-plate" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-capacity" class="font-semibold">Capacidad (kg)</label>
+                    <input type="number" id="vehicle-capacity" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-carrier" class="font-semibold">Transportadora</label>
+                    <select id="vehicle-carrier" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Flota Propia">Flota Propia</option>
+                        <option value="Transportista A">Transportista A</option>
+                        <option value="Transportista B">Transportista B</option>
+                    </select>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Vehículo</button>
+            </div>
+        </div>
+    </div>
+
+     <div id="editVehicleModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Vehículo</h3>
+            <form id="edit-vehicle-form" class="space-y-4">
+                <div>
+                    <label for="edit-vehicle-name" class="font-semibold">Nombre del Móvil</label>
+                    <input type="text" id="edit-vehicle-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-vehicle-plate" class="font-semibold">Patente</label>
+                    <input type="text" id="edit-vehicle-plate" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-vehicle-capacity" class="font-semibold">Capacidad (kg)</label>
+                    <input type="number" id="edit-vehicle-capacity" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-vehicle-carrier" class="font-semibold">Transportadora</label>
+                    <select id="edit-vehicle-carrier" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Flota Propia">Flota Propia</option>
+                        <option value="Transportista A">Transportista A</option>
+                        <option value="Transportista B">Transportista B</option>
+                    </select>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="vehicleStatusModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 id="vehicle-status-modal-title" class="font-bold text-lg mb-4">Cambiar Estado del Vehículo</h3>
+            <form id="vehicle-status-form">
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <input type="radio" id="status-disponible" name="vehicle-status" value="disponible" class="h-4 w-4 text-sky-600 border-gray-300 focus:ring-sky-500">
+                        <label for="status-disponible" class="ml-3 block text-sm font-medium text-gray-700">Disponible</label>
+                    </div>
+                    <div class="flex items-center">
+                         <input type="radio" id="status-no-disponible" name="vehicle-status" value="no-disponible" class="h-4 w-4 text-sky-600 border-gray-300 focus:ring-sky-500">
+                        <label for="status-no-disponible" class="ml-3 block text-sm font-medium text-gray-700">No Disponible</label>
+                    </div>
+                </div>
+                <div id="reason-wrapper" class="hidden mt-4">
+                    <label for="unavailability-reason" class="font-semibold text-sm">Motivo de no disponibilidad</label>
+                    <textarea id="unavailability-reason" rows="3" class="w-full p-2 border rounded-lg mt-1"></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle-status" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addOrderModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 class="font-bold text-lg mb-6">Añadir Nuevo Pedido</h3>
+            <form id="add-order-form" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="col-span-1"><label for="order-diaDespacho" class="font-semibold text-sm">Día de Despacho</label><input type="date" id="order-diaDespacho" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-fechaDespacho" class="font-semibold text-sm">Fecha de Despacho</label><input type="date" id="order-fechaDespacho" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-nombreVendedor" class="font-semibold text-sm">Nombre Vendedor</label><input type="text" id="order-nombreVendedor" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-numPedido" class="font-semibold text-sm">Num. Pedido</label><input type="text" id="order-numPedido" class="w-full p-2 border rounded-lg mt-1" required></div>
+                <div class="col-span-1"><label for="order-numFactura" class="font-semibold text-sm">Num. Factura</label><input type="text" id="order-numFactura" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-codCliente" class="font-semibold text-sm">Cód. Cliente</label><input type="text" id="order-codCliente" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-nombCliente" class="font-semibold text-sm">Nombre Cliente</label><input type="text" id="order-nombCliente" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-tipFactura" class="font-semibold text-sm">Tipo Factura</label><input type="text" id="order-tipFactura" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-canal" class="font-semibold text-sm">Canal</label><input type="text" id="order-canal" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-codBoca" class="font-semibold text-sm">Cód. Boca</label><input type="text" id="order-codBoca" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-boca" class="font-semibold text-sm">Boca</label><input type="text" id="order-boca" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-ciudad" class="font-semibold text-sm">Ciudad</label><input type="text" id="order-ciudad" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-chofer" class="font-semibold text-sm">Chofer</label><input type="text" id="order-chofer" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-transportista" class="font-semibold text-sm">Transportista</label><input type="text" id="order-transportista" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-bascula" class="font-semibold text-sm">Báscula</label><input type="text" id="order-bascula" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-porteria" class="font-semibold text-sm">Portería</label><input type="text" id="order-porteria" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-costoFlete" class="font-semibold text-sm">Costo de Flete</label><input type="number" id="order-costoFlete" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-pesoTotal" class="font-semibold text-sm">Peso Total (kg)</label><input type="number" id="order-pesoTotal" class="w-full p-2 border rounded-lg mt-1" required></div>
+                <div class="col-span-1"><label for="order-importe" class="font-semibold text-sm">Importe Pedidos/IVA</label><input type="number" id="order-importe" class="w-full p-2 border rounded-lg mt-1"></div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-order" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Pedido</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="settlementModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Completar Datos de Liquidación</h3>
+            <p class="mb-4">Factura: <span id="settlement-factura" class="font-semibold"></span></p>
+            <form id="settlement-form" class="space-y-4">
+                 <div>
+                    <label for="settlement-bascula" class="font-semibold">Báscula</label>
+                    <input type="text" id="settlement-bascula" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="settlement-porteria" class="font-semibold">Portería</label>
+                    <input type="text" id="settlement-porteria" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="settlement-costoFlete" class="font-semibold">Costo de Flete</label>
+                    <input type="number" id="settlement-costoFlete" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-settlement-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Datos</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const views = document.querySelectorAll('.view');
+            let charts = {};
+
+            function showView(hash) {
+                const id = hash.substring(1);
+                views.forEach(view => {
+                    view.classList.toggle('hidden', view.id !== id);
+                });
+                navLinks.forEach(link => {
+                    link.classList.toggle('bg-sky-100', link.getAttribute('href') === hash);
+                    link.classList.toggle('font-semibold', link.getAttribute('href') === hash);
+                    if (link.getAttribute('href') !== hash) {
+                        link.classList.remove('bg-sky-100');
+                        link.classList.remove('font-semibold');
+                    }
+                });
+
+                if (id === 'dashboards' && !charts.toneladasChart) {
+                    initCharts();
+                }
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const hash = e.currentTarget.getAttribute('href');
+                    window.location.hash = hash;
+                });
+            });
+
+            window.addEventListener('hashchange', () => {
+                const hash = window.location.hash || '#operacion';
+                showView(hash);
+            });
+
+            const initialHash = window.location.hash || '#operacion';
+            showView(initialHash);
+            
+            // Modal Logic
+            const modalTriggers = document.querySelectorAll('.modal-trigger');
+            const modalCloses = document.querySelectorAll('.modal-close');
+            const modalBgs = document.querySelectorAll('.modal-bg');
+
+            modalTriggers.forEach(trigger => {
+                trigger.addEventListener('click', (e) => {
+                    const modalId = e.currentTarget.dataset.modal;
+                    const modal = document.getElementById(modalId);
+                    if(modal) modal.classList.remove('hidden');
+                });
+            });
+            
+            function closeModal() {
+                 modalBgs.forEach(bg => bg.classList.add('hidden'));
+            }
+
+            modalCloses.forEach(close => close.addEventListener('click', closeModal));
+            modalBgs.forEach(bg => bg.addEventListener('click', (e) => {
+                if (e.target === bg) closeModal();
+            }));
+
+            // Kanban Drag & Drop
+            const kanbanBoard = document.getElementById('kanban-board');
+            let draggedItem = null;
+
+            function updateCardCounter(card) {
+                if (!card) return;
+                const details = card.querySelector('.order-details');
+                const count = details.children.length;
+                const toggleBtn = card.querySelector('.toggle-details');
+                
+                if (count === 0) {
+                    card.remove();
+                } else {
+                    toggleBtn.innerHTML = `Ver ${count} Pedido${count > 1 ? 's' : ''} <i class="fas fa-chevron-down ml-1 text-xs"></i>`;
+                }
+            }
+            
+            kanbanBoard.addEventListener('dragstart', (e) => {
+                if (e.target.classList.contains('kanban-card') || e.target.classList.contains('kanban-order-item')) {
+                    draggedItem = e.target;
+                    setTimeout(() => {
+                        e.target.classList.add('dragging');
+                    }, 0);
+                }
+            });
+
+            kanbanBoard.addEventListener('dragend', (e) => {
+                if (draggedItem) {
+                    draggedItem.classList.remove('dragging');
+                    draggedItem = null;
+                }
+            });
+
+            kanbanBoard.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const target = e.target.closest('.kanban-col, .kanban-card');
+                if (target) {
+                    target.classList.add('drag-over');
+                }
+            });
+
+            kanbanBoard.addEventListener('dragleave', (e) => {
+                 const target = e.target.closest('.kanban-col, .kanban-card');
+                if (target) {
+                    target.classList.remove('drag-over');
+                }
+            });
+
+            kanbanBoard.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const dropTarget = e.target.closest('.kanban-col, .kanban-card');
+                if (dropTarget) {
+                    dropTarget.classList.remove('drag-over');
+                }
+
+                if (!draggedItem || !dropTarget) return;
+
+                const isVehicleCard = draggedItem.classList.contains('kanban-card');
+                const isOrderItem = draggedItem.classList.contains('kanban-order-item');
+
+                // Case 1: Dropping a whole vehicle card into a column
+                if (isVehicleCard && dropTarget.classList.contains('kanban-col')) {
+                    dropTarget.querySelector('.space-y-4').appendChild(draggedItem);
+                }
+
+                // Case 2: Dropping an order item onto another vehicle card (re-assignment)
+                else if (isOrderItem && dropTarget.classList.contains('kanban-card')) {
+                    const sourceCard = draggedItem.closest('.kanban-card');
+                    dropTarget.querySelector('.order-details').appendChild(draggedItem);
+                    updateCardCounter(sourceCard);
+                    updateCardCounter(dropTarget);
+                }
+                
+                // Case 3: Dropping an order item into a column (creating a new trip)
+                else if (isOrderItem && dropTarget.classList.contains('kanban-col')) {
+                     const sourceCard = draggedItem.closest('.kanban-card');
+                     const clone = sourceCard.cloneNode(true);
+                     clone.querySelector('.order-details').innerHTML = '';
+                     clone.querySelector('.order-details').appendChild(draggedItem);
+                     dropTarget.querySelector('.space-y-4').appendChild(clone);
+                     updateCardCounter(clone);
+                     updateCardCounter(sourceCard);
+                }
+            });
+
+
+            // Kanban Filter and Search Logic
+            const transportistaFilter = document.getElementById('transportista-filter');
+            const searchInput = document.getElementById('general-search');
+
+            function filterKanbanCards() {
+                const selectedTransportista = transportistaFilter.value;
+                const searchTerm = searchInput.value.toLowerCase();
+                const allCards = document.querySelectorAll('#kanban-board .kanban-card');
+
+                allCards.forEach(card => {
+                    const transportistaMatch = selectedTransportista === 'todos' || card.dataset.transportista === selectedTransportista;
+                    const cardText = card.textContent.toLowerCase();
+                    const searchMatch = cardText.includes(searchTerm);
+
+                    if (transportistaMatch && searchMatch) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            }
+
+            transportistaFilter.addEventListener('change', filterKanbanCards);
+            searchInput.addEventListener('input', filterKanbanCards);
+            
+            // Kanban Toggle Details & Complete All
+            document.getElementById('operacion').addEventListener('click', (e) => {
+                const toggleBtn = e.target.closest('.toggle-details');
+                if (toggleBtn) {
+                    const card = toggleBtn.closest('.kanban-card');
+                    const details = card.querySelector('.order-details');
+                    const icon = toggleBtn.querySelector('i');
+                    details.classList.toggle('hidden');
+                    icon.classList.toggle('fa-chevron-down');
+                    icon.classList.toggle('fa-chevron-up');
+                }
+
+                const completeBtn = e.target.closest('.complete-all-btn');
+                if (completeBtn) {
+                    const card = completeBtn.closest('.kanban-card');
+                    const deliveredCol = document.querySelector('.kanban-col[data-col="entregado"] .space-y-4');
+                    deliveredCol.appendChild(card);
+                    completeBtn.remove();
+                }
+            });
+
+
+            // Planning Logic
+            const planningSection = document.getElementById('planificacion');
+            const addOrderBtn = document.getElementById('add-order-btn');
+            const addOrderModal = document.getElementById('addOrderModal');
+            const saveOrderBtn = document.getElementById('save-order');
+            const addOrderForm = document.getElementById('add-order-form');
+            const pedidosPool = document.getElementById('pedidos-pool');
+            let draggedPlanningItem = null;
+            
+            function addPlanningCardDragListeners(card) {
+                card.addEventListener('dragstart', () => {
+                    draggedPlanningItem = card;
+                    setTimeout(() => card.classList.add('dragging'), 0);
+                });
+                card.addEventListener('dragend', () => {
+                    if (draggedPlanningItem) {
+                        draggedPlanningItem.classList.remove('dragging');
+                        draggedPlanningItem = null;
+                    }
+                });
+            }
+
+            document.querySelectorAll('.planning-card').forEach(addPlanningCardDragListeners);
+            
+            addOrderBtn.addEventListener('click', () => {
+                addOrderModal.classList.remove('hidden');
+            });
+
+            saveOrderBtn.addEventListener('click', () => {
+                const numPedido = document.getElementById('order-numPedido').value;
+                const nombCliente = document.getElementById('order-nombCliente').value;
+                const peso = document.getElementById('order-pesoTotal').value;
+
+                if (!numPedido || !peso) {
+                    alert('Número de Pedido y Peso Total son obligatorios.');
+                    return;
+                }
+
+                const newCard = document.createElement('div');
+                newCard.className = 'planning-card bg-white p-3 rounded-lg shadow-sm';
+                newCard.draggable = true;
+                newCard.dataset.peso = peso;
+                newCard.innerHTML = `<p class="font-semibold">Pedido #${numPedido}</p><p class="text-sm text-slate-500">Cliente: ${nombCliente || 'N/A'} | ${peso} kg</p>`;
+                
+                pedidosPool.appendChild(newCard);
+                addPlanningCardDragListeners(newCard);
+                
+                addOrderForm.reset();
+                closeModal();
+            });
+
+
+            planningSection.querySelectorAll('.planning-col').forEach(col => {
+                col.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    if (!col.classList.contains('unavailable')) {
+                        col.classList.add('drag-over');
+                    }
+                });
+                col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+                col.addEventListener('drop', e => {
+                    e.preventDefault();
+                    col.classList.remove('drag-over');
+                    if (!draggedPlanningItem || col.classList.contains('unavailable')) return;
+
+                    const peso = parseInt(draggedPlanningItem.dataset.peso);
+                    const capacidad = parseInt(col.dataset.capacidad);
+                    const capacidadActualEl = col.querySelector('.capacidad-actual');
+                    let cargaActual = 0;
+                    col.querySelectorAll('.planning-card').forEach(c => {
+                        cargaActual += parseInt(c.dataset.peso);
+                    });
+
+                    if (cargaActual + peso <= capacidad) {
+                        const cardContainer = col.querySelector('.assigned-cards');
+                        cardContainer.appendChild(draggedPlanningItem);
+                        capacidadActualEl.textContent = cargaActual + peso;
+                    } else {
+                        alert('Capacidad del móvil excedida.');
+                    }
+                    draggedPlanningItem = null;
+                });
+            });
+            
+            // Planning Filters
+            const vehicleSearchInput = document.getElementById('vehicle-search');
+            const vehicleCarrierFilter = document.getElementById('vehicle-carrier-filter');
+
+            function filterPlanningVehicles() {
+                const searchTerm = vehicleSearchInput.value.toLowerCase();
+                const selectedCarrier = vehicleCarrierFilter.value;
+                const allVehicles = document.querySelectorAll('#vehicle-grid .planning-col');
+
+                allVehicles.forEach(vehicle => {
+                    const carrierMatch = selectedCarrier === 'todos' || vehicle.dataset.carrier === selectedCarrier;
+                    const searchText = vehicle.querySelector('h4').textContent.toLowerCase();
+                    const searchMatch = searchText.includes(searchTerm);
+
+                    if(carrierMatch && searchMatch) {
+                        vehicle.style.display = 'block';
+                    } else {
+                        vehicle.style.display = 'none';
+                    }
+                });
+            }
+            vehicleSearchInput.addEventListener('input', filterPlanningVehicles);
+            vehicleCarrierFilter.addEventListener('change', filterPlanningVehicles);
+
+            // Planning Status Change
+            const vehicleStatusModal = document.getElementById('vehicleStatusModal');
+            const saveVehicleStatusBtn = document.getElementById('save-vehicle-status');
+            const reasonWrapper = document.getElementById('reason-wrapper');
+            const statusRadios = document.querySelectorAll('input[name="vehicle-status"]');
+            
+            planningSection.addEventListener('click', (e) => {
+                const statusBtn = e.target.closest('.change-status-btn');
+                if (statusBtn) {
+                    const movilId = statusBtn.dataset.movilId;
+                    const card = document.querySelector(`.planning-col[data-movil-id="${movilId}"]`);
+                    vehicleStatusModal.dataset.activeMovilId = movilId;
+                    
+                    const modalTitle = vehicleStatusModal.querySelector('h3');
+                    modalTitle.textContent = `Cambiar Estado: ${card.querySelector('h4').textContent}`;
+                    
+                    const isUnavailable = card.classList.contains('unavailable');
+                    document.getElementById('status-no-disponible').checked = isUnavailable;
+                    document.getElementById('status-disponible').checked = !isUnavailable;
+                    reasonWrapper.classList.toggle('hidden', !isUnavailable);
+                    document.getElementById('unavailability-reason').value = card.dataset.reason || '';
+
+                    vehicleStatusModal.classList.remove('hidden');
+                }
+            });
+            
+            statusRadios.forEach(radio => {
+                radio.addEventListener('change', () => {
+                     reasonWrapper.classList.toggle('hidden', radio.value === 'disponible');
+                });
+            });
+
+            saveVehicleStatusBtn.addEventListener('click', () => {
+                const movilId = vehicleStatusModal.dataset.activeMovilId;
+                const card = document.querySelector(`.planning-col[data-movil-id="${movilId}"]`);
+                const statusDot = card.querySelector('.status-dot');
+                const selectedStatus = document.querySelector('input[name="vehicle-status"]:checked').value;
+                
+                if (selectedStatus === 'no-disponible') {
+                    const reason = document.getElementById('unavailability-reason').value;
+                    if (!reason) {
+                        alert('Por favor, especifique un motivo.');
+                        return;
+                    }
+                    card.classList.add('unavailable');
+                    statusDot.classList.replace('bg-green-500', 'bg-red-500');
+                    statusDot.title = `No Disponible: ${reason}`;
+                    card.dataset.reason = reason;
+
+                } else {
+                    card.classList.remove('unavailable');
+                    statusDot.classList.replace('bg-red-500', 'bg-green-500');
+                    statusDot.title = 'Disponible';
+                    card.dataset.reason = '';
+                }
+                closeModal();
+            });
+
+
+            // Drop Zone Logic
+            const dropZone = document.getElementById('drop-zone');
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-sky-500', 'bg-sky-50');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-sky-500', 'bg-sky-50');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-sky-500', 'bg-sky-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    dropZone.innerHTML = `<p class="text-green-600 font-semibold">¡Archivo "${files[0].name}" cargado con éxito!</p>`;
+                }
+            });
+
+            // Incidents Logic
+            const incidentTableBody = document.getElementById('incident-table-body');
+            const addIncidentBtn = document.getElementById('add-incident-btn');
+            const incidentDateFilter = document.getElementById('incident-date-filter');
+            const incidentStatusFilter = document.getElementById('incident-status-filter');
+            
+            // Add Modal
+            const addIncidentModal = document.getElementById('addIncidentModal');
+            const saveIncidentBtn = document.getElementById('save-incident');
+            const addIncidentForm = document.getElementById('add-incident-form');
+            const incidentTypeSelect = document.getElementById('incident-type');
+            const otherTypeWrapper = document.getElementById('other-type-wrapper');
+            const otherTypeDescription = document.getElementById('other-type-description');
+            
+            // Edit Modal
+            const editIncidentModal = document.getElementById('editIncidentModal');
+            const saveIncidentChangesBtn = document.getElementById('save-incident-changes');
+            const editIncidentTypeSelect = document.getElementById('edit-incident-type');
+            const editOtherTypeWrapper = document.getElementById('edit-other-type-wrapper');
+            const editOtherTypeDescription = document.getElementById('edit-other-type-description');
+
+            // Other Modals
+            const whyModal = document.getElementById('whyModal');
+            const saveWhyBtn = document.getElementById('save-why-analysis');
+            const reopenModal = document.getElementById('reopenModal');
+            const confirmReopenBtn = document.getElementById('confirm-reopen');
+
+            function handleIncidentActions(e) {
+                const targetButton = e.target.closest('button');
+                if (!targetButton) return;
+
+                const rowId = targetButton.dataset.rowId;
+
+                if (targetButton.classList.contains('analyze-btn')) {
+                    const row = document.getElementById(rowId);
+                    const problemDesc = row.cells[1].textContent;
+                    const problemRef = row.cells[0].textContent;
+                    
+                    whyModal.querySelector('#why-modal-problem').innerHTML = `<span class="font-semibold">Problema:</span> ${problemDesc} (${problemRef})`;
+                    whyModal.dataset.activeRowId = rowId;
+                    whyModal.classList.remove('hidden');
+                }
+
+                if (targetButton.classList.contains('reopen-btn')) {
+                    reopenModal.dataset.activeRowId = rowId;
+                    reopenModal.classList.remove('hidden');
+                }
+
+                if (targetButton.classList.contains('edit-btn')) {
+                    const row = document.getElementById(rowId);
+                    const ref = row.cells[0].textContent;
+                    const desc = row.cells[1].textContent;
+                    const type = row.cells[2].textContent;
+
+                    document.getElementById('edit-incident-ref').value = ref === 'N/A' ? '' : ref;
+                    document.getElementById('edit-incident-desc').value = desc;
+
+                    const typeExists = Array.from(editIncidentTypeSelect.options).some(opt => opt.value === type);
+                    
+                    if (typeExists) {
+                        editIncidentTypeSelect.value = type;
+                        editOtherTypeWrapper.classList.add('hidden');
+                    } else {
+                        editIncidentTypeSelect.value = 'Otro';
+                        editOtherTypeWrapper.classList.remove('hidden');
+                        editOtherTypeDescription.value = type;
+                    }
+
+                    editIncidentModal.dataset.activeRowId = rowId;
+                    editIncidentModal.classList.remove('hidden');
+                }
+            }
+
+            incidentTableBody.addEventListener('click', handleIncidentActions);
+
+            saveWhyBtn.addEventListener('click', () => {
+                const rowId = whyModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if (row) {
+                    const statusCell = row.querySelector('.status-cell');
+                    const actionCell = row.querySelector('.action-cell');
+                    statusCell.innerHTML = `<span class="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Resuelto</span>`;
+                    actionCell.querySelector('.analyze-btn').remove();
+                    actionCell.insertAdjacentHTML('afterbegin', `<button class="reopen-btn text-sm bg-slate-500 text-white px-3 py-1 rounded-lg hover:bg-slate-600" data-row-id="${rowId}">Reabrir</button>`);
+                }
+                closeModal();
+            });
+
+            confirmReopenBtn.addEventListener('click', () => {
+                const rowId = reopenModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if (row) {
+                    const statusCell = row.querySelector('.status-cell');
+                    const actionCell = row.querySelector('.action-cell');
+                    statusCell.innerHTML = `<span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span>`;
+                    actionCell.querySelector('.reopen-btn').remove();
+                    actionCell.insertAdjacentHTML('afterbegin', `<button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="${rowId}">Analizar</button>`);
+                }
+                document.getElementById('reopen-comment').value = '';
+                closeModal();
+            });
+            
+            addIncidentBtn.addEventListener('click', () => {
+                addIncidentModal.classList.remove('hidden');
+            });
+            
+            incidentTypeSelect.addEventListener('change', () => {
+                otherTypeWrapper.classList.toggle('hidden', incidentTypeSelect.value !== 'Otro');
+            });
+            
+            editIncidentTypeSelect.addEventListener('change', () => {
+                editOtherTypeWrapper.classList.toggle('hidden', editIncidentTypeSelect.value !== 'Otro');
+            });
+
+            function updateIncidentTypeOptions(newType) {
+                 const existingTypes = Array.from(incidentTypeSelect.options).map(opt => opt.value);
+                 if (!existingTypes.includes(newType)) {
+                     const newOptionAdd = document.createElement('option');
+                     newOptionAdd.value = newType;
+                     newOptionAdd.textContent = newType;
+                     incidentTypeSelect.insertBefore(newOptionAdd, incidentTypeSelect.querySelector('option[value="Otro"]'));
+                    
+                     const newOptionEdit = newOptionAdd.cloneNode(true);
+                     editIncidentTypeSelect.insertBefore(newOptionEdit, editIncidentTypeSelect.querySelector('option[value="Otro"]'));
+                 }
+            }
+            
+            saveIncidentBtn.addEventListener('click', () => {
+                const ref = document.getElementById('incident-ref').value;
+                let type = incidentTypeSelect.value;
+                const desc = document.getElementById('incident-desc').value;
+
+                if (!desc) {
+                    alert('La descripción detallada es obligatoria.');
+                    return;
+                }
+                
+                if (type === 'Otro') {
+                    const newType = otherTypeDescription.value.trim();
+                    if (!newType) {
+                        alert('La descripción del motivo "Otro" es obligatoria.');
+                        return;
+                    }
+                    type = newType;
+                    updateIncidentTypeOptions(newType);
+                }
+
+                const newRowId = `inc-row-${Date.now()}`;
+                const newRow = document.createElement('tr');
+                newRow.id = newRowId;
+                newRow.className = 'border-b border-slate-100';
+                
+                const today = new Date();
+                const formattedDate = today.toLocaleDateString('es-ES');
+                const isoDate = today.toISOString().split('T')[0];
+
+
+                newRow.innerHTML = `
+                    <td class="p-3 font-semibold">${ref || 'N/A'}</td>
+                    <td class="p-3">${desc}</td>
+                    <td class="p-3">${type}</td>
+                    <td class="p-3" data-date="${isoDate}">${formattedDate}</td>
+                    <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span></td>
+                    <td class="p-3 action-cell space-x-2">
+                        <button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="${newRowId}">Analizar</button>
+                        <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="${newRowId}"><i class="fas fa-pencil"></i></button>
+                    </td>
+                `;
+
+                incidentTableBody.appendChild(newRow);
+                addIncidentForm.reset();
+                otherTypeWrapper.classList.add('hidden');
+                closeModal();
+            });
+
+            saveIncidentChangesBtn.addEventListener('click', () => {
+                const rowId = editIncidentModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if (!row) return;
+
+                const ref = document.getElementById('edit-incident-ref').value;
+                let type = editIncidentTypeSelect.value;
+                const desc = document.getElementById('edit-incident-desc').value;
+
+                if (!desc) {
+                    alert('La descripción detallada es obligatoria.');
+                    return;
+                }
+
+                if (type === 'Otro') {
+                    const newType = editOtherTypeDescription.value.trim();
+                    if (!newType) {
+                        alert('La descripción del motivo "Otro" es obligatoria.');
+                        return;
+                    }
+                    type = newType;
+                    updateIncidentTypeOptions(newType);
+                }
+
+                row.cells[0].textContent = ref || 'N/A';
+                row.cells[1].textContent = desc;
+                row.cells[2].textContent = type;
+                
+                closeModal();
+            });
+            
+            function filterIncidents() {
+                const selectedDate = incidentDateFilter.value;
+                const selectedStatus = incidentStatusFilter.value;
+                const rows = incidentTableBody.querySelectorAll('tr');
+
+                rows.forEach(row => {
+                    const dateCell = row.querySelector('[data-date]');
+                    const statusCell = row.querySelector('.status-cell');
+                    
+                    const rowDate = dateCell ? dateCell.dataset.date : null;
+                    const rowStatus = statusCell ? statusCell.textContent.trim() : null;
+
+                    const dateMatch = !selectedDate || rowDate === selectedDate;
+                    const statusMatch = selectedStatus === 'todos' || rowStatus === selectedStatus;
+
+                    if (dateMatch && statusMatch) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            }
+
+            incidentDateFilter.addEventListener('input', filterIncidents);
+            incidentStatusFilter.addEventListener('change', filterIncidents);
+
+            // Admin Logic
+            const addUserBtn = document.getElementById('add-user-btn');
+            const addUserModal = document.getElementById('addUserModal');
+            const saveUserBtn = document.getElementById('save-user');
+            const userTableBody = document.getElementById('user-table-body');
+            const editUserModal = document.getElementById('editUserModal');
+            const saveUserChangesBtn = document.getElementById('save-user-changes');
+            const userRoleSelect = document.getElementById('user-role');
+            const otherRoleWrapper = document.getElementById('other-role-wrapper');
+            const otherRoleDescription = document.getElementById('other-role-description');
+            const editUserRoleSelect = document.getElementById('edit-user-role');
+            const editOtherRoleWrapper = document.getElementById('edit-other-role-wrapper');
+            const editOtherRoleDescription = document.getElementById('edit-other-role-description');
+            const userSearchInput = document.getElementById('user-search');
+
+            const addVehicleBtn = document.getElementById('add-vehicle-btn');
+            const addVehicleModal = document.getElementById('addVehicleModal');
+            const saveVehicleBtn = document.getElementById('save-vehicle');
+            const vehicleTableBody = document.getElementById('vehicle-table-body');
+            const editVehicleModal = document.getElementById('editVehicleModal');
+            const saveVehicleChangesBtn = document.getElementById('save-vehicle-changes');
+            const flotaSearchInput = document.getElementById('flota-search');
+
+
+            addUserBtn.addEventListener('click', () => addUserModal.classList.remove('hidden'));
+            addVehicleBtn.addEventListener('click', () => addVehicleModal.classList.remove('hidden'));
+            
+            userRoleSelect.addEventListener('change', () => {
+                otherRoleWrapper.classList.toggle('hidden', userRoleSelect.value !== 'Otro');
+            });
+
+            editUserRoleSelect.addEventListener('change', () => {
+                editOtherRoleWrapper.classList.toggle('hidden', editUserRoleSelect.value !== 'Otro');
+            });
+
+            function updateRoleOptions(newRole) {
+                const existingRoles = Array.from(userRoleSelect.options).map(opt => opt.value);
+                if (!existingRoles.includes(newRole)) {
+                    const newOptionAdd = document.createElement('option');
+                    newOptionAdd.value = newRole;
+                    newOptionAdd.textContent = newRole;
+                    userRoleSelect.insertBefore(newOptionAdd, userRoleSelect.querySelector('option[value="Otro"]'));
+                    
+                    const newOptionEdit = newOptionAdd.cloneNode(true);
+                    editUserRoleSelect.insertBefore(newOptionEdit, editUserRoleSelect.querySelector('option[value="Otro"]'));
+                }
+            }
+
+            saveUserBtn.addEventListener('click', () => {
+                const name = document.getElementById('user-name').value;
+                const email = document.getElementById('user-email').value;
+                const ci = document.getElementById('user-ci').value;
+                const company = document.getElementById('user-company').value;
+                let role = userRoleSelect.value;
+
+                if (role === 'Otro') {
+                    const newRole = otherRoleDescription.value.trim();
+                    if (!newRole) {
+                        alert('La descripción para el nuevo rol es obligatoria.');
+                        return;
+                    }
+                    role = newRole;
+                    updateRoleOptions(newRole);
+                }
+
+                if(name && email && ci && company) {
+                    const newRowId = `user-row-${Date.now()}`;
+                    const newRow = document.createElement('tr');
+                    newRow.id = newRowId;
+                    newRow.className = 'border-b';
+                    newRow.innerHTML = `
+                        <td class="p-2">${name}</td>
+                        <td class="p-2">${email}</td>
+                        <td class="p-2">${ci}</td>
+                        <td class="p-2">${company}</td>
+                        <td class="p-2">${role}</td>
+                        <td class="p-2 space-x-2">
+                            <button class="edit-user-btn text-slate-500 hover:text-sky-600" data-row-id="${newRowId}"><i class="fas fa-pencil"></i></button>
+                            <button class="delete-user-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+                        </td>
+                    `;
+                    userTableBody.appendChild(newRow);
+                    document.getElementById('add-user-form').reset();
+                    otherRoleWrapper.classList.add('hidden');
+                    closeModal();
+                } else {
+                    alert('Todos los campos de usuario son obligatorios.');
+                }
+            });
+
+            userTableBody.addEventListener('click', (e) => {
+                const targetButton = e.target.closest('button');
+                if (!targetButton) return;
+                
+                const rowId = targetButton.dataset.rowId;
+
+                if (targetButton.classList.contains('delete-user-btn')) {
+                    targetButton.closest('tr').remove();
+                }
+
+                if (targetButton.classList.contains('edit-user-btn')) {
+                    const row = document.getElementById(rowId);
+                    const name = row.cells[0].textContent;
+                    const email = row.cells[1].textContent;
+                    const ci = row.cells[2].textContent;
+                    const company = row.cells[3].textContent;
+                    const role = row.cells[4].textContent;
+
+                    document.getElementById('edit-user-name').value = name;
+                    document.getElementById('edit-user-email').value = email;
+                    document.getElementById('edit-user-ci').value = ci;
+                    document.getElementById('edit-user-company').value = company;
+                    
+                    const roleExists = Array.from(editUserRoleSelect.options).some(opt => opt.value === role);
+                    if (roleExists) {
+                        editUserRoleSelect.value = role;
+                        editOtherRoleWrapper.classList.add('hidden');
+                    } else {
+                        editUserRoleSelect.value = 'Otro';
+                        editOtherRoleWrapper.classList.remove('hidden');
+                        editOtherRoleDescription.value = role;
+                    }
+
+                    editUserModal.dataset.activeRowId = rowId;
+                    editUserModal.classList.remove('hidden');
+                }
+            });
+
+            saveUserChangesBtn.addEventListener('click', () => {
+                const rowId = editUserModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if(!row) return;
+
+                const name = document.getElementById('edit-user-name').value;
+                const email = document.getElementById('edit-user-email').value;
+                const ci = document.getElementById('edit-user-ci').value;
+                const company = document.getElementById('edit-user-company').value;
+                let role = editUserRoleSelect.value;
+
+                if (role === 'Otro') {
+                    const newRole = editOtherRoleDescription.value.trim();
+                    if (!newRole) {
+                        alert('La descripción para el nuevo rol es obligatoria.');
+                        return;
+                    }
+                    role = newRole;
+                    updateRoleOptions(newRole);
+                }
+
+                 if (name && email && ci && company) {
+                    row.cells[0].textContent = name;
+                    row.cells[1].textContent = email;
+                    row.cells[2].textContent = ci;
+                    row.cells[3].textContent = company;
+                    row.cells[4].textContent = role;
+                    closeModal();
+                 } else {
+                    alert('Todos los campos de usuario son obligatorios.');
+                 }
+            });
+
+            userSearchInput.addEventListener('input', () => {
+                const searchTerm = userSearchInput.value.toLowerCase();
+                const rows = userTableBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const rowText = row.textContent.toLowerCase();
+                    if (rowText.includes(searchTerm)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+
+
+            saveVehicleBtn.addEventListener('click', () => {
+                const name = document.getElementById('vehicle-name').value;
+                const plate = document.getElementById('vehicle-plate').value;
+                const capacity = document.getElementById('vehicle-capacity').value;
+                const carrier = document.getElementById('vehicle-carrier').value;
+
+                if (name && plate && capacity) {
+                     const newRowId = `vehicle-row-${Date.now()}`;
+                     const newRow = document.createElement('tr');
+                     newRow.id = newRowId;
+                     newRow.className = 'border-b';
+                     newRow.innerHTML = `
+                         <td class="p-2">${name}</td>
+                         <td class="p-2">${plate}</td>
+                         <td class="p-2">${capacity} kg</td>
+                         <td class="p-2">${carrier}</td>
+                         <td class="p-2 space-x-2">
+                            <button class="edit-vehicle-btn text-slate-500 hover:text-sky-600" data-row-id="${newRowId}"><i class="fas fa-pencil"></i></button>
+                            <button class="delete-vehicle-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+                         </td>
+                    `;
+                    vehicleTableBody.appendChild(newRow);
+                    document.getElementById('add-vehicle-form').reset();
+                    closeModal();
+                } else {
+                    alert('Todos los campos del vehículo son obligatorios.');
+                }
+            });
+
+            function handleVehicleActions(e) {
+                 const targetButton = e.target.closest('button');
+                if (!targetButton) return;
+
+                const rowId = targetButton.dataset.rowId;
+
+                if (targetButton.classList.contains('delete-vehicle-btn')) {
+                    targetButton.closest('tr').remove();
+                }
+
+                if (targetButton.classList.contains('edit-vehicle-btn')) {
+                    const row = document.getElementById(rowId);
+                    
+                    const name = row.cells[0].textContent;
+                    const plate = row.cells[1].textContent;
+                    const capacity = parseInt(row.cells[2].textContent.replace(' kg', ''));
+                    const carrier = row.cells[3].textContent;
+
+                    document.getElementById('edit-vehicle-name').value = name;
+                    document.getElementById('edit-vehicle-plate').value = plate;
+                    document.getElementById('edit-vehicle-capacity').value = capacity;
+                    document.getElementById('edit-vehicle-carrier').value = carrier;
+
+                    editVehicleModal.dataset.activeRowId = rowId;
+                    editVehicleModal.classList.remove('hidden');
+                }
+            }
+             vehicleTableBody.addEventListener('click', handleVehicleActions);
+
+            flotaSearchInput.addEventListener('input', () => {
+                const searchTerm = flotaSearchInput.value.toLowerCase();
+                const rows = vehicleTableBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const rowText = row.textContent.toLowerCase();
+                    if (rowText.includes(searchTerm)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+
+
+            saveVehicleChangesBtn.addEventListener('click', () => {
+                const rowId = editVehicleModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if(!row) return;
+
+                const name = document.getElementById('edit-vehicle-name').value;
+                const plate = document.getElementById('edit-vehicle-plate').value;
+                const capacity = document.getElementById('edit-vehicle-capacity').value;
+                const carrier = document.getElementById('edit-vehicle-carrier').value;
+
+                 if (name && plate && capacity) {
+                    row.cells[0].textContent = name;
+                    row.cells[1].textContent = plate;
+                    row.cells[2].textContent = `${capacity} kg`;
+                    row.cells[3].textContent = carrier;
+                    closeModal();
+                 } else {
+                    alert('Todos los campos del vehículo son obligatorios.');
+                 }
+            });
+            
+             // Liquidación Logic
+            const settlementTableBody = document.getElementById('settlement-table-body');
+            const settlementModal = document.getElementById('settlementModal');
+            const saveSettlementBtn = document.getElementById('save-settlement-changes');
+
+            settlementTableBody.addEventListener('click', (e) => {
+                const targetButton = e.target.closest('button');
+                if (targetButton && targetButton.classList.contains('edit-settlement-btn')) {
+                    const rowId = targetButton.dataset.rowId;
+                    const row = document.getElementById(rowId);
+                    document.getElementById('settlement-factura').textContent = row.cells[0].textContent;
+                    settlementModal.dataset.activeRowId = rowId;
+                    settlementModal.classList.remove('hidden');
+                }
+            });
+
+            saveSettlementBtn.addEventListener('click', () => {
+                const rowId = settlementModal.dataset.activeRowId;
+                const row = document.getElementById(rowId);
+                if (!row) return;
+
+                const bascula = document.getElementById('settlement-bascula').value;
+                const porteria = document.getElementById('settlement-porteria').value;
+                const costo = document.getElementById('settlement-costoFlete').value;
+
+                const basculaCell = row.cells[3];
+                const porteriaCell = row.cells[4];
+                const costoCell = row.cells[5];
+
+                if (bascula) {
+                    basculaCell.innerHTML = `<i class="fas fa-check-circle text-green-500"></i>`;
+                }
+                if (porteria) {
+                    porteriaCell.innerHTML = `<i class="fas fa-check-circle text-green-500"></i>`;
+                }
+                if (costo) {
+                    costoCell.innerHTML = `<i class="fas fa-check-circle text-green-500"></i>`;
+                }
+                
+                closeModal();
+            });
+
+
+            // Reports Logic
+            function downloadCSV(headers, data, filename) {
+                const csvRows = [];
+                csvRows.push(headers.join(','));
+                for (const row of data) {
+                    const values = headers.map(header => {
+                        const escaped = ('' + row[header]).replace(/"/g, '\\"');
+                        return `"${escaped}"`;
+                    });
+                    csvRows.push(values.join(','));
+                }
+                const csvString = csvRows.join('\n');
+                const blob = new Blob([csvString], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('hidden', '');
+                a.setAttribute('href', url);
+                a.setAttribute('download', filename);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            document.getElementById('download-incidents-csv').addEventListener('click', () => {
+                const headers = ['id_incidencia', 'descripcion', 'tipo', 'fecha', 'estado', 'tiempo_resolucion_hs'];
+                const data = [
+                    { id_incidencia: 1, descripcion: 'Cliente ausente', tipo: 'Reparto', fecha: '2025-10-18', estado: 'Abierto', tiempo_resolucion_hs: null },
+                    { id_incidencia: 2, descripcion: 'Dirección incorrecta', tipo: 'Reparto', fecha: '2025-10-17', estado: 'Resuelto', tiempo_resolucion_hs: 4 },
+                    { id_incidencia: 3, descripcion: 'Desperfecto mecánico', tipo: 'Planificación', fecha: '2025-10-17', estado: 'Abierto', tiempo_resolucion_hs: null },
+                ];
+                downloadCSV(headers, data, 'informe_incidencias.csv');
+            });
+
+            document.getElementById('download-deliveries-csv').addEventListener('click', () => {
+                const headers = ['factura', 'cliente', 'movil', 'transportadora', 'fecha_asignacion', 'fecha_entrega', 'estado'];
+                 const data = [
+                    { factura: '78901', cliente: 'Supermercado El Sol', movil: 'Móvil 05', transportadora: 'Flota Propia', fecha_asignacion: '2025-10-18', fecha_entrega: '', estado: 'Asignado' },
+                    { factura: '78905', cliente: 'Bodega Del Pueblo', movil: 'Móvil 08', transportadora: 'Transportista B', fecha_asignacion: '2025-10-18', fecha_entrega: '', estado: 'En Tránsito' },
+                    { factura: '78852', cliente: 'Tienda La Esquina', movil: 'Móvil 10', transportadora: 'Transportista A', fecha_asignacion: '2025-10-17', fecha_entrega: '2025-10-17', estado: 'Entregado' },
+                ];
+                downloadCSV(headers, data, 'informe_entregas.csv');
+            });
+
+
+            // Chart.js Initialization
+            function initCharts() {
+                const chartOptions = {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    },
+                    scales: {
+                         x: { grid: { display: false } },
+                         y: { beginAtZero: true, grid: { color: '#e2e8f0' } }
+                    }
+                };
+                
+                // Toneladas Chart
+                const toneladasCtx = document.getElementById('toneladasChart').getContext('2d');
+                charts.toneladasChart = new Chart(toneladasCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
+                        datasets: [{
+                            label: 'Toneladas',
+                            data: [12.5, 15.2, 11.8, 18.1, 21.4, 9.3],
+                            backgroundColor: '#0284c7',
+                            borderRadius: 4,
+                        }]
+                    },
+                    options: chartOptions
+                });
+
+                // Entregas Chart
+                const entregasCtx = document.getElementById('entregasChart').getContext('2d');
+                charts.entregasChart = new Chart(entregasCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['A Tiempo', 'Atrasadas', 'Con Incidencia'],
+                        datasets: [{
+                            data: [1180, 22, 2],
+                            backgroundColor: ['#059669', '#f59e0b', '#ef4444'],
+                            borderColor: '#ffffff',
+                            borderWidth: 4,
+                        }]
+                    },
+                    options: { ...chartOptions, scales: {} }
+                });
+                
+                // Flota Chart
+                const flotaCtx = document.getElementById('flotaChart').getContext('2d');
+                charts.flotaChart = new Chart(flotaCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Móvil 05', 'Móvil 01', 'Móvil 03', 'Móvil 02', 'Móvil 04'],
+                        datasets: [{
+                            label: 'Viajes Realizados',
+                            data: [45, 42, 38, 31, 25],
+                            backgroundColor: '#38bdf8',
+                            borderRadius: 4,
+                        }]
+                    },
+                    options: { ...chartOptions, indexAxis: 'y' }
+                });
+
+                // Móviles por Canal y Transportista Chart
+                const canalCtx = document.getElementById('canalTransportistaChart').getContext('2d');
+                charts.canalTransportistaChart = new Chart(canalCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Minorista', 'E-commerce', 'Mayorista'],
+                        datasets: [
+                            {
+                                label: 'Flota Propia',
+                                data: [5, 2, 3],
+                                backgroundColor: '#0284c7',
+                                borderRadius: 4,
+                            },
+                            {
+                                label: 'Transportista A',
+                                data: [3, 4, 1],
+                                backgroundColor: '#38bdf8',
+                                borderRadius: 4,
+                            },
+                            {
+                                label: 'Transportista B',
+                                data: [2, 1, 0],
+                                backgroundColor: '#7dd3fc',
+                                borderRadius: 4,
+                            }
+                        ]
+                    },
+                    options: {
+                        ...chartOptions,
+                        scales: {
+                            x: { stacked: true, grid: { display: false } },
+                            y: { stacked: true, beginAtZero: true, grid: { color: '#e2e8f0' } }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
