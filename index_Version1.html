@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control Logístico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <!-- Chosen Palette: "Calm Neutral" (bg-slate-50, text-slate-800, accent-sky-600) -->
+    <!-- Application Structure Plan: Se diseñó una Single-Page Application (SPA) con una barra de navegación lateral fija. Esta estructura permite al usuario cambiar de contexto entre los módulos [...]
+    <!-- Visualization & Content Choices: 
+         - Módulo Operación: Se usa un tablero Kanban (HTML/Flexbox) para representar el flujo de trabajo (Asignado -> Entregado). Meta: Organizar. Interacción: Arrastrar tarjetas para actualizar e[...]
+         - Módulo Planificación: Vista de dos paneles (HTML/Grid) con drag-and-drop (JS API). Meta: Comparar y Organizar. Interacción: Arrastrar pedidos a vehículos. Justificación: Es la forma m�[...]
+         - Módulo Dashboards: Se utilizan gráficos de Chart.js (Canvas). Meta: Informar y Comparar. Interacción: Filtros que actualizan los gráficos. Justificación: Chart.js es ligero, responsive[...]
+         - Contenido textual: Se usan párrafos introductorios en cada sección para guiar al usuario, explicando el propósito de cada herramienta. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .main-content { transition: margin-left 0.3s ease; }
+        .sidebar { transition: width 0.3s ease; }
+        .kanban-card, .planning-card, .kanban-order-item { cursor: grab; }
+        .dragging { opacity: 0.5; border: 2px dashed #0284c7; }
+        .drag-over { background-color: #e0f2fe; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .planning-col.unavailable { background-color: #f1f5f9; border-style: solid; }
+        .drop-zone--active { border-color: #0284c7; background-color: #f0f9ff; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="bg-white w-64 flex flex-col border-r border-slate-200 sidebar">
+            <div class="p-4 border-b border-slate-200">
+                <h1 class="text-2xl font-bold text-sky-600">LogiTrack</h1>
+                <p class="text-sm text-slate-500">Gestión de Entregas</p>
+            </div>
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#operacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 bg-sky-100 font-semibold">
+                    <i class="fas fa-tasks w-6 h-6 mr-3"></i><span>Operación</span>
+                </a>
+                <a href="#planificacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-calendar-alt w-6 h-6 mr-3"></i><span>Planificación</span>
+                </a>
+                <a href="#incidencias" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-exclamation-triangle w-6 h-6 mr-3"></i><span>Análisis de Incidencias</span>
+                </a>
+                <a href="#dashboards" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-chart-pie w-6 h-6 mr-3"></i><span>Dashboards</span>
+                </a>
+                 <a href="#informes" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-alt w-6 h-6 mr-3"></i><span>Informes</span>
+                </a>
+                 <a href="#liquidacion" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-invoice-dollar w-6 h-6 mr-3"></i><span>Liquidación</span>
+                </a>
+                <a href="#usuarios" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-users-cog w-6 h-6 mr-3"></i><span>Usuarios y Roles</span>
+                </a>
+                <a href="#flota" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-truck w-6 h-6 mr-3"></i><span>Flota de Vehículos</span>
+                </a>
+                 <a href="#importar" class="nav-link flex items-center p-2 rounded-lg text-slate-700 hover:bg-sky-50">
+                    <i class="fas fa-file-import w-6 h-6 mr-3"></i><span>Importar Datos</span>
+                </a>
+            </nav>
+            <div class="p-4 border-t border-slate-200">
+                <div class="flex items-center">
+                    <img src="https://placehold.co/40x40/E2E8F0/475569?text=AV" alt="Avatar" class="rounded-full">
+                    <div class="ml-3">
+                        <p class="font-semibold">Ana Valdez</p>
+                        <p class="text-sm text-slate-500">Planificador</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-1 p-4 md:p-8 overflow-y-auto">
+            
+            <!-- Módulo Operación (Kanban) -->
+            <div id="operacion" class="view">
+                <h2 class="text-3xl font-bold mb-1">Tablero de Operaciones</h2>
+                <p class="text-slate-600 mb-6">Monitorea el estado de todas las entregas en tiempo real. Arrastra las tarjetas para actualizar su estado.</p>
+                <!-- Filtros y Búsqueda -->
+                <div class="flex flex-wrap items-center gap-4 mb-6">
+                    <div>
+                        <label for="transportista-filter" class="font-semibold mr-2 text-sm text-slate-600">Transportadora:</label>
+                        <select id="transportista-filter" class="p-2 border border-slate-300 rounded-lg">
+                            <option value="todos">Todas</option>
+                            <option value="Flota Propia">Flota Propia</option>
+                            <option value="Transportista A">Transportista A</option>
+                            <option value="Transportista B">Transportista B</option>
+                        </select>
+                    </div>
+                    <div class="relative">
+                        <label for="general-search" class="sr-only">Buscar</label>
+                        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <i class="fas fa-search text-slate-400"></i>
+                        </div>
+                        <input type="text" id="general-search" placeholder="Buscar por móvil, factura, cliente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-64">
+                    </div>
+                </div>
+                <div id="kanban-board" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                    <!-- Columnas Kanban -->
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="asignado">
+                        <h3 class="font-bold mb-4 text-slate-700">Asignado</h3>
+                        <div class="space-y-4">
+                            <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Flota Propia">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 05</p>
+                                        <p class="text-sm text-slate-500">Flota Propia</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 2 Pedidos <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78901" data-order-cliente="Supermercado El Sol">
+                                        <p class="font-semibold text-sm">Factura #78901</p>
+                                        <p class="text-xs text-slate-500">Cliente: Supermercado El Sol</p>
+                                    </div>
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78903" data-order-cliente="Distribuidora Central">
+                                        <p class="font-semibold text-sm">Factura #78903</p>
+                                        <p class="text-xs text-slate-500">Cliente: Distribuidora Central</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right"></div>
+                            </div>
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 12</p>
+                                        <p class="text-sm text-slate-500">Transportista A</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                     <div class="kanban-order-item p-1" draggable="true" data-order-id="78902" data-order-cliente="Tienda La Esquina">
+                                        <p class="font-semibold text-sm">Factura #78902</p>
+                                        <p class="text-xs text-slate-500">Cliente: Tienda La Esquina</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="despacho">
+                        <h3 class="font-bold mb-4 text-slate-700">En Despacho</h3>
+                         <div class="space-y-4">
+                            <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Flota Propia">
+                                 <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 01</p>
+                                        <p class="text-sm text-slate-500">Flota Propia</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78904" data-order-cliente="Farmacia VidaSana">
+                                        <p class="font-semibold text-sm">Factura #78904</p>
+                                        <p class="text-xs text-slate-500">Cliente: Farmacia VidaSana</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                    <button class="text-xs text-sky-600 modal-trigger" data-modal="checklistModal">Ver Checklist</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="transito">
+                        <h3 class="font-bold mb-4 text-slate-700">En Tránsito</h3>
+                         <div class="space-y-4">
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm" draggable="true" data-transportista="Transportista B">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 08</p>
+                                        <p class="text-sm text-slate-500">Transportista B</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-slate-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78905" data-order-cliente="Bodega Del Pueblo">
+                                        <p class="font-semibold text-sm">Factura #78905</p>
+                                        <p class="text-xs text-slate-500">Cliente: Bodega Del Pueblo</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                    <button class="complete-all-btn bg-green-100 text-green-700 text-xs font-semibold px-3 py-1 rounded-full hover:bg-green-200">Completar Viaje</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-col bg-slate-100 rounded-lg p-4" data-col="entregado">
+                        <h3 class="font-bold mb-4 text-slate-700">Entregado</h3>
+                        <div class="space-y-4"></div>
+                    </div>
+                    <div class="kanban-col bg-red-100 rounded-lg p-4" data-col="incidencia">
+                        <h3 class="font-bold mb-4 text-red-700">Con Incidencia</h3>
+                        <div class="space-y-4">
+                             <div class="kanban-card bg-white p-4 rounded-lg shadow-sm border-l-4 border-red-500" draggable="true" data-transportista="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-bold"><i class="fas fa-truck mr-2"></i>Móvil 15</p>
+                                        <p class="text-sm text-slate-500">Transportista A</p>
+                                    </div>
+                                    <button class="toggle-details text-sky-600 text-sm font-semibold">Ver 1 Pedido <i class="fas fa-chevron-down ml-1 text-xs"></i></button>
+                                </div>
+                                <div class="order-details hidden mt-4 pt-2 pl-4 border-l-2 border-red-200 space-y-3">
+                                    <div class="kanban-order-item p-1" draggable="true" data-order-id="78906" data-order-cliente="Hipermercado Gigante">
+                                        <p class="font-semibold text-sm">Factura #78906</p>
+                                        <p class="text-xs text-slate-500">Cliente: Hipermercado Gigante</p>
+                                         <p class="mt-1 font-semibold text-red-600 text-xs">Cliente ausente</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-right">
+                                     <button class="text-xs text-sky-600 mt-2 modal-trigger" data-modal="whyModal" data-row-id="inc-row-1">Analizar Causa</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Módulo Planificación -->
+            <div id="planificacion" class="view hidden">
+                 <h2 class="text-3xl font-bold mb-1">Planificación de Despachos</h2>
+                <p class="text-slate-600 mb-6">Asigna pedidos a los vehículos disponibles. Arrastra un pedido del panel izquierdo y suéltalo sobre un móvil en el panel derecho.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 bg-slate-100 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-lg">Pedidos por Asignar</h3>
+                             <button id="add-order-btn" class="bg-sky-600 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-sky-700 flex items-center">
+                                <i class="fas fa-plus mr-2"></i>Añadir
+                            </button>
+                        </div>
+                        <div id="pedidos-pool" class="space-y-4">
+                            <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="250">
+                                <p class="font-semibold">Pedido #1011</p>
+                                <p class="text-sm text-slate-500">Cliente A | 250 kg</p>
+                            </div>
+                            <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="400">
+                                <p class="font-semibold">Pedido #1012</p>
+                                <p class="text-sm text-slate-500">Cliente B | 400 kg</p>
+                            </div>
+                             <div class="planning-card bg-white p-3 rounded-lg shadow-sm" draggable="true" data-peso="800">
+                                <p class="font-semibold">Pedido #1013</p>
+                                <p class="text-sm text-slate-500">Cliente C | 800 kg</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 bg-slate-100 p-4 rounded-lg">
+                        <div class="flex flex-wrap items-center gap-4 mb-6">
+                            <h3 class="font-bold text-lg">Móviles Disponibles</h3>
+                            <div class="relative">
+                                <input type="text" id="vehicle-search" placeholder="Buscar móvil o patente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-auto">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <i class="fas fa-search text-slate-400"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <select id="vehicle-carrier-filter" class="p-2 border border-slate-300 rounded-lg">
+                                    <option value="todos">Todas las transportadoras</option>
+                                    <option value="Flota Propia">Flota Propia</option>
+                                    <option value="Transportista A">Transportista A</option>
+                                    <option value="Transportista B">Transportista B</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="vehicle-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="planning-col border border-dashed border-slate-300 p-4 rounded-lg" data-movil-id="movil-1" data-capacidad="1500" data-carrier="Flota Propia">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-semibold">Móvil 01 (JKL-456)</h4>
+                                        <p class="text-sm text-slate-500 carrier-name">Flota Propia</p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="status-dot h-3 w-3 bg-green-500 rounded-full" title="Disponible"></span>
+                                        <button class="change-status-btn text-slate-400 hover:text-sky-600" data-movil-id="movil-1"><i class="fas fa-cog"></i></button>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-slate-500 mt-2">Capacidad: <span class="capacidad-actual">0</span> / 1500 kg</p>
+                                <div class="mt-2 space-y-2 assigned-cards"></div>
+                            </div>
+                             <div class="planning-col border border-dashed border-slate-300 p-4 rounded-lg" data-movil-id="movil-2" data-capacidad="2000" data-carrier="Transportista A">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-semibold">Móvil 02 (XYZ-789)</h4>
+                                        <p class="text-sm text-slate-500 carrier-name">Transportista A</p>
+                                    </div>
+                                     <div class="flex items-center gap-2">
+                                        <span class="status-dot h-3 w-3 bg-green-500 rounded-full" title="Disponible"></span>
+                                        <button class="change-status-btn text-slate-400 hover:text-sky-600" data-movil-id="movil-2"><i class="fas fa-cog"></i></button>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-slate-500 mt-2">Capacidad: <span class="capacidad-actual">0</span> / 2000 kg</p>
+                                <div class="mt-2 space-y-2 assigned-cards"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Módulo Análisis de Incidencias -->
+            <div id="incidencias" class="view hidden">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Análisis de Incidencias</h2>
+                        <p class="text-slate-600">Gestiona y da seguimiento a las incidencias ocurridas para asegurar su resolución.</p>
+                    </div>
+                    <button id="add-incident-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                        <i class="fas fa-plus mr-2"></i>Añadir Incidencia
+                    </button>
+                </div>
+                <div class="flex flex-wrap items-center gap-4 mb-4">
+                    <div>
+                        <label for="incident-date-filter" class="font-semibold mr-2 text-sm text-slate-600">Fecha:</label>
+                        <input type="date" id="incident-date-filter" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                     <div>
+                        <label for="incident-status-filter" class="font-semibold mr-2 text-sm text-slate-600">Estado:</label>
+                        <select id="incident-status-filter" class="p-2 border border-slate-300 rounded-lg">
+                            <option value="todos">Todos</option>
+                            <option value="Abierto">Abierto</option>
+                            <option value="Resuelto">Resuelto</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <table class="w-full text-left">
+                        <thead class="border-b-2 border-slate-200">
+                            <tr>
+                                <th class="p-3">Factura/Móvil</th>
+                                <th class="p-3">Descripción</th>
+                                <th class="p-3">Tipo</th>
+                                <th class="p-3">Fecha</th>
+                                <th class="p-3">Estado</th>
+                                <th class="p-3">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incident-table-body">
+                            <tr id="inc-row-1" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">#78906</td>
+                                <td class="p-3">Cliente ausente</td>
+                                <td class="p-3">Reparto</td>
+                                <td class="p-3" data-date="2025-10-18">18/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="inc-row-1">Analizar</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-1"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                            <tr id="inc-row-2" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">#78852</td>
+                                <td class="p-3">Dirección incorrecta</td>
+                                <td class="p-3">Reparto</td>
+                                <td class="p-3" data-date="2025-10-17">17/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Resuelto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="reopen-btn text-sm bg-slate-500 text-white px-3 py-1 rounded-lg hover:bg-slate-600" data-row-id="inc-row-2">Reabrir</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-2"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                            <tr id="inc-row-3" class="border-b border-slate-100">
+                                <td class="p-3 font-semibold">Móvil 03</td>
+                                <td class="p-3">Desperfecto mecánico</td>
+                                <td class="p-3">Planificación</td>
+                                <td class="p-3" data-date="2025-10-17">17/10/2025</td>
+                                <td class="p-3 status-cell"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Abierto</span></td>
+                                <td class="p-3 action-cell space-x-2">
+                                    <button class="analyze-btn text-sm bg-sky-600 text-white px-3 py-1 rounded-lg hover:bg-sky-700" data-row-id="inc-row-3">Analizar</button>
+                                    <button class="edit-btn text-slate-500 hover:text-sky-600" data-row-id="inc-row-3"><i class="fas fa-pencil"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Módulo Dashboards -->
+            <div id="dashboards" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Dashboards de Rendimiento</h2>
+                <p class="text-slate-600 mb-6">Analiza los indicadores clave de tu operación. Utiliza los filtros para explorar los datos por período.</p>
+                <!-- Filtros -->
+                <div class="mb-6">
+                    <select id="date-filter" class="p-2 border border-slate-300 rounded-lg">
+                        <option value="7">Últimos 7 días</option>
+                        <option value="30">Últimos 30 días</option>
+                        <option value="90">Últimos 90 días</option>
+                    </select>
+                </div>
+                <!-- KPIs -->
+                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Entregas Totales</p><p class="text-3xl font-bold">1,204</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Toneladas Transportadas</p><p class="text-3xl font-bold">85.3 T</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Costo Flete Total</p><p class="text-3xl font-bold">$18,500</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm"><p class="text-sm text-slate-500">Nivel de Servicio</p><p class="text-3xl font-bold text-green-600">98.2%</p></div>
+                </div>
+                <!-- Gráficos -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold mb-4">Toneladas por Día</h3>
+                        <div class="chart-container"><canvas id="toneladasChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold mb-4">Estado de Entregas</h3>
+                        <div class="chart-container"><canvas id="entregasChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                        <h3 class="font-bold mb-4">Viajes por Móvil</h3>
+                        <div class="chart-container" style="height: 400px; max-height: 500px;"><canvas id="flotaChart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                        <h3 class="font-bold mb-4">Móviles Despachados por Canal y Transportista (Hoy)</h3>
+                        <div class="chart-container" style="height: 400px; max-height: 500px;"><canvas id="canalTransportistaChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+            
+             <!-- Módulo Informes -->
+            <div id="informes" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Generación de Informes</h2>
+                <p class="text-slate-600 mb-6">Selecciona el tipo de informe, define un rango de fechas y descarga los datos en formato CSV.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Informe de Incidencias -->
+                    <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-lg mb-4">Informe de Incidencias</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="inc-start-date" class="font-semibold text-sm">Fecha de Inicio</label>
+                                <input type="date" id="inc-start-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="inc-end-date" class="font-semibold text-sm">Fecha de Fin</label>
+                                <input type="date" id="inc-end-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                             <div>
+                                <label for="report-inc-status-filter" class="font-semibold text-sm">Estado</label>
+                                <select id="report-inc-status-filter" class="w-full p-2 border rounded-lg mt-1">
+                                    <option value="todos">Todos</option>
+                                    <option value="Abierto">Abierto</option>
+                                    <option value="Resuelto">Resuelto</option>
+                                </select>
+                            </div>
+                            <button id="download-incidents-csv" class="w-full bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">
+                                <i class="fas fa-download mr-2"></i>Descargar Informe
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Informe de Entregas -->
+                     <div class="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-lg mb-4">Informe de Entregas</h3>
+                        <div class="space-y-4">
+                             <div>
+                                <label for="del-start-date" class="font-semibold text-sm">Fecha de Inicio</label>
+                                <input type="date" id="del-start-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="del-end-date" class="font-semibold text-sm">Fecha de Fin</label>
+                                <input type="date" id="del-end-date" class="w-full p-2 border rounded-lg mt-1">
+                            </div>
+                            <div>
+                                <label for="report-carrier-filter" class="font-semibold text-sm">Transportadora</label>
+                                <select id="report-carrier-filter" class="w-full p-2 border rounded-lg mt-1">
+                                     <option value="todos">Todas</option>
+                                     <option value="Flota Propia">Flota Propia</option>
+                                     <option value="Transportista A">Transportista A</option>
+                                     <option value="Transportista B">Transportista B</option>
+                                </select>
+                            </div>
+                            <button id="download-deliveries-csv" class="w-full bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">
+                               <i class="fas fa-download mr-2"></i>Descargar Informe
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+             <!-- Módulo Liquidación -->
+            <div id="liquidacion" class="view hidden">
+                 <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Liquidación de Viajes</h2>
+                        <p class="text-slate-600">Verifica y completa los datos de los repartos finalizados.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-4 mb-4">
+                    <div>
+                        <label for="settlement-start-date" class="font-semibold mr-2 text-sm text-slate-600">Desde:</label>
+                        <input type="date" id="settlement-start-date" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label for="settlement-end-date" class="font-semibold mr-2 text-sm text-slate-600">Hasta:</label>
+                        <input type="date" id="settlement-end-date" class="p-2 border border-slate-300 rounded-lg">
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[800px]">
+                        <thead class="border-b">
+                            <tr>
+                                <th class="p-2">Factura</th>
+                                <th class="p-2">Móvil</th>
+                                <th class="p-2">Transportadora</th>
+                                <th class="p-2 text-center">Báscula</th>
+                                <th class="p-2 text-center">Portería</th>
+                                <th class="p-2 text-center">Costo Flete</th>
+                                <th class="p-2">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="settlement-table-body">
+                           <tr id="settlement-row-1" class="border-b">
+                                <td class="p-2 font-semibold">#78852</td>
+                                <td class="p-2">Móvil 10</td>
+                                <td class="p-2">Transportista A</td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2"><button class="edit-settlement-btn text-slate-500 hover:text-sky-600" data-row-id="settlement-row-1"><i class="fas fa-pencil"></i></button></td>
+                           </tr>
+                           <tr id="settlement-row-2" class="border-b">
+                                <td class="p-2 font-semibold">#78853</td>
+                                <td class="p-2">Móvil 02</td>
+                                <td class="p-2">Flota Propia</td>
+                                <td class="p-2 text-center"><i class="fas fa-check-circle text-green-500"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-exclamation-triangle text-red-500" title="Dato Faltante"></i></td>
+                                <td class="p-2 text-center"><i class="fas fa-exclamation-triangle text-red-500" title="Dato Faltante"></i></td>
+                                <td class="p-2"><button class="edit-settlement-btn text-slate-500 hover:text-sky-600" data-row-id="settlement-row-2"><i class="fas fa-pencil"></i></button></td>
+                           </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Usuarios y Roles -->
+            <div id="usuarios" class="view hidden">
+                 <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Gestión de Usuarios y Roles</h2>
+                        <p class="text-slate-600">Añade, edita o elimina usuarios del sistema.</p>
+                    </div>
+                    <button id="add-user-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                        <i class="fas fa-plus mr-2"></i>Añadir Usuario
+                    </button>
+                </div>
+                 <div class="mb-4">
+                    <div class="relative">
+                        <label for="user-search" class="sr-only">Buscar</label>
+                        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <i class="fas fa-search text-slate-400"></i>
+                        </div>
+                        <input type="text" id="user-search" placeholder="Buscar por nombre, correo, CI..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-72">
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[700px]">
+                        <thead class="border-b"><tr><th class="p-2">Nombre</th><th class="p-2">Correo Electrónico</th><th class="p-2">CI</th><th class="p-2">Empresa</th><th class="p-2">Rol</th><th class="p-2">Acciones</th></tr></thead>
+                        <tbody id="user-table-body">
+                            <tr id="user-row-1" class="border-b"><td class="p-2">Ana Valdez</td><td class="p-2">avaldez@logitrack.com</td><td class="p-2">1234567-8</td><td class="p-2">LogiTrack</td><td class="p-2">Planificador</td><td class="p-2">—</td></tr>
+                            <tr id="user-row-2" class="border-b"><td class="p-2">Carlos Ruiz</td><td class="p-2">cruiz@transportista-a.com</td><td class="p-2">8765432-1</td><td class="p-2">Transportista A</td><td class="p-2">Conductor</td><td class="p-2">—</td></tr>
+                            <tr id="user-row-3" class="border-b"><td class="p-2">Maria Solis</td><td class="p-2">msolis@logitrack.com</td><td class="p-2">1122334-5</td><td class="p-2">LogiTrack</td><td class="p-2">Administrador</td><td class="p-2">—</td></tr>
+                            <tr id="user-row-4"><td class="p-2">Juan Pérez</td><td class="p-2">jperez@transportista-b.com</td><td class="p-2">5566778-9</td><td class="p-2">Transportista B</td><td class="p-2">Conductor</td><td class="p-2">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Flota de Vehículos -->
+            <div id="flota" class="view hidden">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-1">Gestión de Flota</h2>
+                        <p class="text-slate-600">Añade, edita o elimina vehículos de tu flota.</p>
+                    </div>
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                         <div class="relative">
+                            <label for="flota-search" class="sr-only">Buscar</label>
+                            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                <i class="fas fa-search text-slate-400"></i>
+                            </div>
+                            <input type="text" id="flota-search" placeholder="Buscar por móvil, patente..." class="p-2 pl-10 border border-slate-300 rounded-lg w-full sm:w-auto">
+                        </div>
+                        <button id="add-vehicle-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700 flex items-center justify-center">
+                            <i class="fas fa-plus mr-2"></i>Añadir Vehículo
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm overflow-x-auto">
+                    <table class="w-full text-left min-w-[600px]">
+                        <thead class="border-b"><tr><th class="p-2">Móvil</th><th class="p-2">Patente</th><th class="p-2">Capacidad</th><th class="p-2">Transportadora</th><th class="p-2">Acciones</th></tr></thead>
+                        <tbody id="vehicle-table-body">
+                            <tr id="vehicle-row-1" class="border-b"><td class="p-2">Móvil 01</td><td class="p-2">JKL-456</td><td class="p-2">1500 kg</td><td class="p-2">Flota Propia</td><td class="p-2">—</td></tr>
+                            <tr id="vehicle-row-2" class="border-b"><td class="p-2">Móvil 02</td><td class="p-2">XYZ-789</td><td class="p-2">2000 kg</td><td class="p-2">Flota Propia</td><td class="p-2">—</td></tr>
+                            <tr id="vehicle-row-3" class="border-b"><td class="p-2">Móvil 03</td><td class="p-2">GHI-321</td><td class="p-2">3500 kg</td><td class="p-2">Transportista A</td><td class="p-2">—</td></tr>
+                            <tr id="vehicle-row-4"><td class="p-2">Móvil 05</td><td class="p-2">ABC-123</td><td class="p-2">3500 kg</td><td class="p-2">Flota Propia</td><td class="p-2 space-x-2">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Módulo Importar -->
+            <div id="importar" class="view hidden">
+                <h2 class="text-3xl font-bold mb-1">Carga de Datos</h2>
+                <p class="text-slate-600 mb-6">Importa los datos de despachos desde un archivo Excel para iniciar la planificación.</p>
+                <div class="bg-white p-8 rounded-lg shadow-sm text-center max-w-2xl mx-auto">
+                    <i class="fas fa-file-excel text-5xl text-green-500 mb-4"></i>
+                    <h3 class="font-bold text-lg mb-2">Importación Masiva</h3>
+                    <p class="text-slate-500 mb-6">Descarga la plantilla, completa los datos y arrastra el archivo aquí para cargarlo.</p>
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-300 p-12 rounded-lg hover:border-sky-500 hover:bg-sky-50 transition-colors">
+                        <p id="drop-zone-msg" class="text-slate-500">Arrastra y suelta tu archivo .xlsx aquí</p>
+                        <p class="text-sm text-slate-400 my-2">o</p>
+                        <button id="select-file-btn" class="bg-sky-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-sky-700">Seleccionar Archivo</button>
+                    </div>
+                    <button id="download-template-btn" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold hover:bg-slate-300 mt-6">
+                        <i class="fas fa-download mr-2"></i>Descargar Plantilla
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="checklistModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+            <h3 class="font-bold text-lg mb-4">Checklist Pre-Despacho: Móvil 01</h3>
+            <ul>
+                <li class="flex justify-between items-center py-2 border-b"><p>Nivel de combustible</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2 border-b"><p>Estado de neumáticos</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2 border-b"><p>Luces funcionando</p><span class="text-green-600 font-semibold">OK</span></li>
+                <li class="flex justify-between items-center py-2"><p>Documentación completa</p><span class="text-green-600 font-semibold">OK</span></li>
+            </ul>
+            <button class="modal-close mt-6 bg-slate-200 text-slate-700 px-4 py-2 rounded-lg w-full">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="whyModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Análisis de Causa Raíz: 5 Porqués</h3>
+            <p id="why-modal-problem" class="mb-4 bg-red-50 p-3 rounded-lg"></p>
+            <div class="space-y-3">
+                <div><label class="font-semibold">1. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">2. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">3. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">4. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+                <div><label class="font-semibold">5. ¿Por qué?</label><input type="text" class="why-input w-full p-2 border rounded-lg mt-1"></div>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-why-analysis" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Análisis y Resolver</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="reopenModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Reabrir Incidencia</h3>
+            <p class="mb-4">Estás a punto de reabrir una incidencia resuelta. Puedes añadir un comentario opcional para explicar el motivo.</p>
+            <div>
+                <label for="reopen-comment" class="font-semibold">Comentario (Opcional)</label>
+                <textarea id="reopen-comment" rows="3" class="w-full p-2 border rounded-lg mt-1"></textarea>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="confirm-reopen" class="bg-red-600 text-white px-4 py-2 rounded-lg">Confirmar Reapertura</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addIncidentModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nueva Incidencia</h3>
+            <form id="add-incident-form" class="space-y-4">
+                <div>
+                    <label for="incident-ref" class="font-semibold">Factura / Móvil (Opcional)</label>
+                    <input type="text" id="incident-ref" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="incident-type" class="font-semibold">Tipo de Incidencia</label>
+                    <select id="incident-type" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificación">Planificación</option>
+                        <option value="Reparto">Reparto</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="other-type-wrapper" class="hidden">
+                    <label for="other-type-description" class="font-semibold">Descripción del Motivo "Otro"</label>
+                    <input type="text" id="other-type-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="incident-desc" class="font-semibold">Descripción Detallada</label>
+                    <textarea id="incident-desc" rows="3" class="w-full p-2 border rounded-lg mt-1" required></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-incident" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Incidencia</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editIncidentModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Incidencia</h3>
+            <form id="edit-incident-form" class="space-y-4">
+                <div>
+                    <label for="edit-incident-ref" class="font-semibold">Factura / Móvil (Opcional)</label>
+                    <input type="text" id="edit-incident-ref" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="edit-incident-type" class="font-semibold">Tipo de Incidencia</label>
+                    <select id="edit-incident-type" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificación">Planificación</option>
+                        <option value="Reparto">Reparto</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="edit-other-type-wrapper" class="hidden">
+                    <label for="edit-other-type-description" class="font-semibold">Descripción del Motivo "Otro"</label>
+                    <input type="text" id="edit-other-type-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="edit-incident-desc" class="font-semibold">Descripción Detallada</label>
+                    <textarea id="edit-incident-desc" rows="3" class="w-full p-2 border rounded-lg mt-1" required></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-incident-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modals (kept for completeness) -->
+    <div id="addUserModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nuevo Usuario</h3>
+            <form id="add-user-form" class="space-y-4">
+                <div>
+                    <label for="user-name" class="font-semibold">Nombre</label>
+                    <input type="text" id="user-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-email" class="font-semibold">Correo Electrónico</label>
+                    <input type="email" id="user-email" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-ci" class="font-semibold">CI (Cédula de Identidad)</label>
+                    <input type="text" id="user-ci" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="user-company" class="font-semibold">Empresa</label>
+                    <input type="text" id="user-company" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="user-role" class="font-semibold">Rol</label>
+                    <select id="user-role" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificador">Planificador</option>
+                        <option value="Conductor">Conductor</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="other-role-wrapper" class="hidden">
+                    <label for="other-role-description" class="font-semibold">Especificar "Otro" Rol</label>
+                    <input type="text" id="other-role-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-user" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Usuario</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editUserModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Usuario</h3>
+            <form id="edit-user-form" class="space-y-4">
+                <div>
+                    <label for="edit-user-name" class="font-semibold">Nombre</label>
+                    <input type="text" id="edit-user-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-user-email" class="font-semibold">Correo Electrónico</label>
+                    <input type="email" id="edit-user-email" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-user-ci" class="font-semibold">CI (Cédula de Identidad)</label>
+                    <input type="text" id="edit-user-ci" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-user-company" class="font-semibold">Empresa</label>
+                    <input type="text" id="edit-user-company" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-user-role" class="font-semibold">Rol</label>
+                    <select id="edit-user-role" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Planificador">Planificador</option>
+                        <option value="Conductor">Conductor</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div id="edit-other-role-wrapper" class="hidden">
+                    <label for="edit-other-role-description" class="font-semibold">Especificar "Otro" Rol</label>
+                    <input type="text" id="edit-other-role-description" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-user-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addVehicleModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Añadir Nuevo Vehículo</h3>
+            <form id="add-vehicle-form" class="space-y-4">
+                <div>
+                    <label for="vehicle-name" class="font-semibold">Nombre del Móvil (ej: Móvil 06)</label>
+                    <input type="text" id="vehicle-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-plate" class="font-semibold">Patente</label>
+                    <input type="text" id="vehicle-plate" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-capacity" class="font-semibold">Capacidad (kg)</label>
+                    <input type="number" id="vehicle-capacity" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="vehicle-carrier" class="font-semibold">Transportadora</label>
+                    <select id="vehicle-carrier" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Flota Propia">Flota Propia</option>
+                        <option value="Transportista A">Transportista A</option>
+                        <option value="Transportista B">Transportista B</option>
+                    </select>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Vehículo</button>
+            </div>
+        </div>
+    </div>
+
+     <div id="editVehicleModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Editar Vehículo</h3>
+            <form id="edit-vehicle-form" class="space-y-4">
+                <div>
+                    <label for="edit-vehicle-name" class="font-semibold">Nombre del Móvil</label>
+                    <input type="text" id="edit-vehicle-name" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-vehicle-plate" class="font-semibold">Patente</label>
+                    <input type="text" id="edit-vehicle-plate" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label for="edit-vehicle-capacity" class="font-semibold">Capacidad (kg)</label>
+                    <input type="number" id="edit-vehicle-capacity" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="edit-vehicle-carrier" class="font-semibold">Transportadora</label>
+                    <select id="edit-vehicle-carrier" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="Flota Propia">Flota Propia</option>
+                        <option value="Transportista A">Transportista A</option>
+                        <option value="Transportista B">Transportista B</option>
+                    </select>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="vehicleStatusModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 id="vehicle-status-modal-title" class="font-bold text-lg mb-4">Cambiar Estado del Vehículo</h3>
+            <form id="vehicle-status-form">
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <input type="radio" id="status-disponible" name="vehicle-status" value="disponible" class="h-4 w-4 text-sky-600 border-gray-300 focus:ring-sky-500">
+                        <label for="status-disponible" class="ml-3 block text-sm font-medium text-gray-700">Disponible</label>
+                    </div>
+                    <div class="flex items-center">
+                         <input type="radio" id="status-no-disponible" name="vehicle-status" value="no-disponible" class="h-4 w-4 text-sky-600 border-gray-300 focus:ring-sky-500">
+                        <label for="status-no-disponible" class="ml-3 block text-sm font-medium text-gray-700">No Disponible</label>
+                    </div>
+                </div>
+                <div id="reason-wrapper" class="hidden mt-4">
+                    <label for="unavailability-reason" class="font-semibold text-sm">Motivo de no disponibilidad</label>
+                    <textarea id="unavailability-reason" rows="3" class="w-full p-2 border rounded-lg mt-1"></textarea>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-vehicle-status" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addOrderModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 class="font-bold text-lg mb-6">Añadir Nuevo Pedido</h3>
+            <form id="add-order-form" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="col-span-1"><label for="order-diaDespacho" class="font-semibold text-sm">Día de Despacho</label><input type="date" id="order-diaDespacho" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-fechaDespacho" class="font-semibold text-sm">Fecha de Despacho</label><input type="date" id="order-fechaDespacho" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-nombreVendedor" class="font-semibold text-sm">Nombre Vendedor</label><input type="text" id="order-nombreVendedor" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-numPedido" class="font-semibold text-sm">Num. Pedido</label><input type="text" id="order-numPedido" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-numFactura" class="font-semibold text-sm">Num. Factura</label><input type="text" id="order-numFactura" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-codCliente" class="font-semibold text-sm">Cód. Cliente</label><input type="text" id="order-codCliente" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-nombCliente" class="font-semibold text-sm">Nombre Cliente</label><input type="text" id="order-nombCliente" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-tipFactura" class="font-semibold text-sm">Tipo Factura</label><input type="text" id="order-tipFactura" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-canal" class="font-semibold text-sm">Canal</label><input type="text" id="order-canal" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-codBoca" class="font-semibold text-sm">Cód. Boca</label><input type="text" id="order-codBoca" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-boca" class="font-semibold text-sm">Boca</label><input type="text" id="order-boca" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-ciudad" class="font-semibold text-sm">Ciudad</label><input type="text" id="order-ciudad" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-chofer" class="font-semibold text-sm">Chofer</label><input type="text" id="order-chofer" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-transportista" class="font-semibold text-sm">Transportista</label><input type="text" id="order-transportista" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-bascula" class="font-semibold text-sm">Báscula</label><input type="text" id="order-bascula" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-porteria" class="font-semibold text-sm">Portería</label><input type="text" id="order-porteria" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-costoFlete" class="font-semibold text-sm">Costo de Flete</label><input type="number" id="order-costoFlete" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-pesoTotal" class="font-semibold text-sm">Peso Total (kg)</label><input type="number" id="order-pesoTotal" class="w-full p-2 border rounded-lg mt-1"></div>
+                <div class="col-span-1"><label for="order-importe" class="font-semibold text-sm">Importe Pedidos/IVA</label><input type="number" id="order-importe" class="w-full p-2 border rounded-lg mt-1"></div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-order" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Pedido</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="settlementModal" class="modal-bg hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="modal-content bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+            <h3 class="font-bold text-lg mb-4">Completar Datos de Liquidación</h3>
+            <p class="mb-4">Factura: <span id="settlement-factura" class="font-semibold"></span></p>
+            <form id="settlement-form" class="space-y-4">
+                 <div>
+                    <label for="settlement-bascula" class="font-semibold">Báscula</label>
+                    <input type="text" id="settlement-bascula" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                 <div>
+                    <label for="settlement-porteria" class="font-semibold">Portería</label>
+                    <input type="text" id="settlement-porteria" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <div>
+                    <label for="settlement-costoFlete" class="font-semibold">Costo de Flete</label>
+                    <input type="number" id="settlement-costoFlete" class="w-full p-2 border rounded-lg mt-1"> 
+                </div>
+            </form>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button class="modal-close bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">Cancelar</button>
+                <button id="save-settlement-changes" class="bg-sky-600 text-white px-4 py-2 rounded-lg">Guardar Datos</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const views = document.querySelectorAll('.view');
+            let charts = {};
+
+            function showView(hash) {
+                const id = hash.substring(1);
+                views.forEach(view => {
+                    view.classList.toggle('hidden', view.id !== id);
+                });
+                navLinks.forEach(link => {
+                    link.classList.toggle('bg-sky-100', link.getAttribute('href') === hash);
+                    link.classList.toggle('font-semibold', link.getAttribute('href') === hash);
+                    if (link.getAttribute('href') !== hash) {
+                        link.classList.remove('bg-sky-100');
+                        link.classList.remove('font-semibold');
+                    }
+                });
+
+                if (id === 'dashboards' && !charts.toneladasChart) {
+                    initCharts();
+                }
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const hash = e.currentTarget.getAttribute('href');
+                    window.location.hash = hash;
+                });
+            });
+
+            window.addEventListener('hashchange', () => {
+                const hash = window.location.hash || '#operacion';
+                showView(hash);
+            });
+
+            const initialHash = window.location.hash || '#operacion';
+            showView(initialHash);
+
+            // Minimal charts init to avoid runtime errors and show placeholders
+            function initCharts() {
+                try {
+                    const ctxT = document.getElementById('toneladasChart')?.getContext('2d');
+                    const ctxE = document.getElementById('entregasChart')?.getContext('2d');
+                    const ctxF = document.getElementById('flotaChart')?.getContext('2d');
+                    const ctxC = document.getElementById('canalTransportistaChart')?.getContext('2d');
+
+                    if (ctxT) {
+                        charts.toneladasChart = new Chart(ctxT, {
+                            type: 'line',
+                            data: {
+                                labels: ['-6','-5','-4','-3','-2','-1','Hoy'],
+                                datasets: [{ label: 'Toneladas', data: [10, 12, 9, 15, 11, 13, 14], borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,0.1)' }]
+                            }
+                        });
+                    }
+                    if (ctxE) {
+                        charts.entregasChart = new Chart(ctxE, {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['Entregadas','Pendientes','Incidencia'],
+                                datasets: [{ data: [80, 15, 5], backgroundColor: ['#10b981','#f59e0b','#ef4444'] }]
+                            }
+                        });
+                    }
+                    if (ctxF) {
+                        charts.flotaChart = new Chart(ctxF, {
+                            type: 'bar',
+                            data: {
+                                labels: ['Móvil 01','Móvil 02','Móvil 05','Móvil 08'],
+                                datasets: [{ label: 'Viajes', data: [12,9,7,8], backgroundColor: '#0ea5e9' }]
+                            }
+                        });
+                    }
+                    if (ctxC) {
+                        charts.canalTransportistaChart = new Chart(ctxC, {
+                            type: 'bar',
+                            data: {
+                                labels: ['Canal A','Canal B','Canal C'],
+                                datasets: [
+                                    { label: 'Flota Propia', data: [5,3,2], backgroundColor: '#60a5fa' },
+                                    { label: 'Transportista A', data: [2,4,1], backgroundColor: '#34d399' }
+                                ]
+                            },
+                            options: { responsive: true }
+                        });
+                    }
+                } catch (err) {
+                    console.warn('Charts init error:', err);
+                }
+            }
+
+            // Modal close handlers (generic)
+            document.querySelectorAll('.modal-close').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const modal = e.target.closest('.modal-bg');
+                    if (modal) modal.classList.add('hidden');
+                });
+            });
+
+            // Simple modal open for elements with .modal-trigger
+            document.querySelectorAll('.modal-trigger').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const modalId = e.currentTarget.dataset.modal;
+                    const rowId = e.currentTarget.dataset.rowId;
+                    if (modalId) {
+                        const m = document.getElementById(modalId);
+                        if (m) {
+                            // set context if needed
+                            if (modalId === 'whyModal' && rowId) {
+                                const problemEl = document.getElementById('why-modal-problem');
+                                const row = document.getElementById(rowId);
+                                problemEl.textContent = row ? row.querySelector('td:nth-child(2)')?.textContent || '' : '';
+                            }
+                            m.classList.remove('hidden');
+                        }
+                    }
+                });
+            });
+
+            // -----------------------------
+            // Import / Drop zone functionality
+            // -----------------------------
+            const dropZone = document.getElementById('drop-zone');
+            const dropZoneMsg = document.getElementById('drop-zone-msg');
+            const selectFileBtn = document.getElementById('select-file-btn');
+            const downloadTemplateBtn = document.getElementById('download-template-btn');
+            const pedidosPool = document.getElementById('pedidos-pool');
+
+            // hidden file input
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.xlsx,.xls';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+
+            function setDropMessage(msg, color = 'text-slate-500') {
+                dropZoneMsg.textContent = msg;
+                dropZoneMsg.className = color;
+            }
+
+            selectFileBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (ev) => {
+                const f = ev.target.files?.[0];
+                if (f) handleFile(f);
+                fileInput.value = '';
+            });
+
+            ['dragenter','dragover'].forEach(evt => {
+                dropZone.addEventListener(evt, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('drop-zone--active');
+                });
+            });
+            ['dragleave','dragend','drop'].forEach(evt => {
+                dropZone.addEventListener(evt, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (evt === 'drop') dropZone.classList.remove('drop-zone--active');
+                    else dropZone.classList.remove('drop-zone--active');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length) {
+                    handleFile(files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                const allowed = ['.xlsx', '.xls'];
+                const name = file.name.toLowerCase();
+                if (!allowed.some(ext => name.endsWith(ext))) {
+                    alert('Archivo no válido. Por favor sube un .xlsx o .xls');
+                    return;
+                }
+                setDropMessage('Procesando archivo...');
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const data = ev.target.result;
+                    try {
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const sheet = workbook.Sheets[firstSheetName];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                        if (!rows.length) {
+                            setDropMessage('La hoja está vacía o no contiene filas.', 'text-red-500');
+                            return;
+                        }
+                        populatePedidosFromSheet(rows);
+                        setDropMessage(`Archivo procesado. ${rows.length} filas importadas.`, 'text-green-600');
+                    } catch (err) {
+                        console.error(err);
+                        setDropMessage('Error procesando el archivo.', 'text-red-500');
+                    }
+                };
+                reader.onerror = (e) => {
+                    console.error('FileReader error', e);
+                    setDropMessage('Error leyendo el archivo.', 'text-red-500');
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            // Heuristics to map column names
+            function findKey(keys, regexList) {
+                for (const key of keys) {
+                    for (const rx of regexList) {
+                        if (String(key).toLowerCase().match(rx)) return key;
+                    }
+                }
+                return null;
+            }
+
+            function populatePedidosFromSheet(rows) {
+                const keys = Object.keys(rows[0] || {});
+                // common patterns
+                const invoiceKey = findKey(keys, [/fact/i, /invoice/i, /num/i, /nro/i, /pedido/i]);
+                const clientKey = findKey(keys, [/cliente/i, /client/i, /boca/i, /name/i]);
+                const pesoKey = findKey(keys, [/peso/i, /kg/i, /weight/i, /kilos/i]);
+                const carrierKey = findKey(keys, [/transport/i, /carrier/i, /transportista/i]);
+
+                rows.forEach((row, idx) => {
+                    const factura = invoiceKey ? row[invoiceKey] : row[Object.keys(row)[0]] || `Fila ${idx+1}`;
+                    const cliente = clientKey ? row[clientKey] : '';
+                    const pesoRaw = pesoKey ? row[pesoKey] : '';
+                    const carrier = carrierKey ? row[carrierKey] : '';
+                    // try to extract numeric peso
+                    let peso = 0;
+                    if (typeof pesoRaw === 'number') peso = pesoRaw;
+                    else if (typeof pesoRaw === 'string') {
+                        const n = parseFloat(pesoRaw.toString().replace(/[^\d.,-]/g, '').replace(',', '.'));
+                        if (!isNaN(n)) peso = n;
+                    }
+
+                    // create DOM element
+                    const card = document.createElement('div');
+                    card.className = 'planning-card bg-white p-3 rounded-lg shadow-sm';
+                    card.setAttribute('draggable', 'true');
+                    card.dataset.peso = peso;
+                    if (carrier) card.dataset.transportista = carrier;
+
+                    const title = document.createElement('p');
+                    title.className = 'font-semibold';
+                    title.textContent = factura ? (`${factura}`) : `Pedido ${idx+1}`;
+                    const subtitle = document.createElement('p');
+                    subtitle.className = 'text-sm text-slate-500';
+                    let subText = '';
+                    if (cliente) subText += `${cliente}`;
+                    if (peso) subText += (subText ? ' | ' : '') + `${peso} kg`;
+                    if (!subText) subText = 'Sin datos adicionales';
+                    subtitle.textContent = subText;
+
+                    card.appendChild(title);
+                    card.appendChild(subtitle);
+
+                    // prepend card so new imports appear at top
+                    pedidosPool.insertBefore(card, pedidosPool.firstChild);
+                });
+            }
+
+            // Download a small CSV template
+            downloadTemplateBtn.addEventListener('click', () => {
+                const headers = ['Num. Factura','Nombre Cliente','Peso Total (kg)','Transportista'];
+                const csv = headers.join(',') + '\n' + '78901,Supermercado El Sol,250,Flota Propia\n78902,Tienda La Esquina,400,Transportista A\n';
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'plantilla_importacion.csv';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            });
+
+            // Prevent default behavior for dragover on document
+            ['dragenter','dragover','dragleave','drop'].forEach(evt => {
+                document.addEventListener(evt, (e) => {
+                    // If the drag is over the dropZone, allow it; otherwise prevent to avoid opening file in browser
+                    if (!e.target.closest || !e.target.closest('#drop-zone')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                }, false);
+            });
+
+            // Optionally: implement simple click-to-toggle details for kanban cards
+            document.addEventListener('click', (e) => {
+                if (e.target.matches('.toggle-details') || e.target.closest('.toggle-details')) {
+                    const btn = e.target.closest('.toggle-details');
+                    const card = btn.closest('.kanban-card');
+                    const details = card.querySelector('.order-details');
+                    if (details) details.classList.toggle('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
